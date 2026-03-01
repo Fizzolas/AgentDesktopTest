@@ -1,3 +1,130 @@
-# CONTRACTS
-# Fill in function signatures as files are built
-# Format: filename.py -> exports: func(args) -> return_type
+# CONTRACTS.txt — AgentDesktopTest
+# Last updated: 2026-03-01
+# Rules:
+#   - Never call a function with different args than defined here
+#   - Never change a return type without updating this file AND all callers
+#   - Never import a file not listed in that file's "Imports from" section
+#   - Update this file every time a function is added, changed, or removed
+
+# =============================================================================
+# config.py
+# Role: Global constants. Imported by nearly everything. No functions — variables only.
+# Imports from: (none)
+# =============================================================================
+
+config.py -> exports (variables):
+  MODEL_NAME       : str   # e.g. "qwen2.5-coder:7b"
+  OLLAMA_URL       : str   # e.g. "http://localhost:11434"
+  SCREEN_REGION    : dict  # e.g. {"top": 0, "left": 0, "width": 1920, "height": 1080}
+  LOOP_DELAY       : float # seconds between agent loop ticks
+  MAX_RETRIES      : int   # max retries on model query failure
+  DEBUG            : bool  # enable verbose logging
+
+# =============================================================================
+# screen_capture.py
+# Role: Raw screen grab utility. Base layer — no project imports.
+# Imports from: (none — uses mss, numpy only)
+# =============================================================================
+
+screen_capture.py -> exports:
+  capture_screen(region: dict | None = None) -> np.ndarray
+    # Captures screen or a region. Returns BGR numpy array.
+    # region format: {"top": int, "left": int, "width": int, "height": int}
+    # If region is None, captures full primary monitor.
+
+# =============================================================================
+# vision.py
+# Role: Analyzes screen frames. Returns structured description for the agent.
+# Imports from: screen_capture.py
+# =============================================================================
+
+vision.py -> exports:
+  analyze_frame(img: np.ndarray) -> dict
+    # Analyzes a screen frame. Returns structured dict describing screen content.
+    # Return format: {"description": str, "elements": list, "text": str}
+
+  get_screen_state(region: dict | None = None) -> dict
+    # Convenience wrapper: captures screen then analyzes it in one call.
+    # Calls capture_screen() then analyze_frame().
+    # Returns same format as analyze_frame().
+
+# =============================================================================
+# ollama_client.py
+# Role: Interface to local Ollama model via HTTP API.
+# Imports from: config.py
+# =============================================================================
+
+ollama_client.py -> exports:
+  query_model(prompt: str, system: str | None = None) -> str
+    # Sends prompt to Ollama model. Returns model response as string.
+    # Uses MODEL_NAME and OLLAMA_URL from config.py.
+    # Raises: ConnectionError if Ollama not running.
+
+  load_model(model_name: str) -> bool
+    # Warms up / preloads a model in Ollama.
+    # Returns True if successful, False if failed.
+
+  check_ollama_running() -> bool
+    # Pings OLLAMA_URL to confirm service is live.
+    # Returns True if reachable, False otherwise.
+
+# =============================================================================
+# agent_loop.py
+# Role: Core autonomous goal loop. Orchestrates all components.
+# Imports from: config.py, vision.py, ollama_client.py, screen_capture.py
+# Also wraps: open-interpreter (interpreter object)
+# NOTE: This is the ONLY file that calls vision.py and ollama_client.py directly.
+# =============================================================================
+
+agent_loop.py -> exports:
+  run(goal: str) -> None
+    # Main entry point for the agent loop.
+    # Accepts a plain-English goal string.
+    # Runs continuously until goal is marked complete or user interrupts.
+
+  step(goal: str, screen_state: dict) -> str
+    # Runs a single agent tick. Takes current goal + screen state.
+    # Queries model, returns next action string.
+
+  stop() -> None
+    # Gracefully stops the agent loop.
+    # Cleans up interpreter session.
+
+# =============================================================================
+# main.py
+# Role: Entry point. Wires config + agent loop together. Minimal logic.
+# Imports from: config.py, agent_loop.py
+# NOTE: main.py does NOT import vision.py or ollama_client.py directly.
+# =============================================================================
+
+main.py -> exports:
+  main() -> None
+    # Initializes config, confirms Ollama is running, prompts user for goal,
+    # then calls agent_loop.run(goal).
+
+# =============================================================================
+# OPEN INTERPRETER INTEGRATION NOTES
+# =============================================================================
+# OI version: 0.4.3
+# Run via Ollama: interpreter --model ollama/qwen2.5-coder:7b
+# Or in code:
+#   from interpreter import interpreter
+#   interpreter.llm.model = "ollama/qwen2.5-coder:7b"
+#   interpreter.llm.api_base = "http://localhost:11434"
+#   interpreter.chat("your goal here")
+#
+# The interpreter object is instantiated ONCE in agent_loop.py and reused.
+# Do not instantiate it in main.py or any other file.
+
+# =============================================================================
+# DEPENDENCY CHAIN SUMMARY
+# =============================================================================
+# main.py
+#   -> config.py
+#   -> agent_loop.py
+#       -> config.py
+#       -> vision.py
+#           -> screen_capture.py
+#       -> ollama_client.py
+#           -> config.py
+#       -> open-interpreter (external)
