@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-01
+# Last updated: 2026-03-01 18:32 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -10,6 +10,7 @@
 # config.py
 # Role: Global constants. Imported by nearly everything. No functions — variables only.
 # Imports from: (none)
+# Status: Complete
 # =============================================================================
 
 config.py -> exports (variables):
@@ -24,18 +25,24 @@ config.py -> exports (variables):
 # screen_capture.py
 # Role: Raw screen grab utility. Base layer — no project imports.
 # Imports from: (none — uses mss, numpy only)
+# Status: Complete
+# FRAGILE: Returns BGR np.ndarray (3-channel uint8). Do NOT change to BGRA or PIL.Image.
+#          mss returns BGRA by default — the [:, :, :3] alpha strip is intentional.
+#          vision.py and OpenCV depend on this format.
 # =============================================================================
 
 screen_capture.py -> exports:
   capture_screen(region: dict | None = None) -> np.ndarray
-    # Captures screen or a region. Returns BGR numpy array.
+    # Captures screen or a region. Returns BGR numpy array (uint8, HxWxC).
     # region format: {"top": int, "left": int, "width": int, "height": int}
-    # If region is None, captures full primary monitor.
+    # If region is None, captures full primary monitor (mss.monitors[1]).
+    # Uses context manager — mss handle is released after every call.
 
 # =============================================================================
 # vision.py
 # Role: Analyzes screen frames. Returns structured description for the agent.
 # Imports from: screen_capture.py
+# Status: Empty shell
 # =============================================================================
 
 vision.py -> exports:
@@ -52,6 +59,7 @@ vision.py -> exports:
 # ollama_client.py
 # Role: Interface to local Ollama model via HTTP API.
 # Imports from: config.py
+# Status: Empty shell
 # =============================================================================
 
 ollama_client.py -> exports:
@@ -74,6 +82,7 @@ ollama_client.py -> exports:
 # Imports from: config.py, vision.py, ollama_client.py, screen_capture.py
 # Also wraps: open-interpreter (interpreter object)
 # NOTE: This is the ONLY file that calls vision.py and ollama_client.py directly.
+# Status: Empty shell
 # =============================================================================
 
 agent_loop.py -> exports:
@@ -95,6 +104,7 @@ agent_loop.py -> exports:
 # Role: Entry point. Wires config + agent loop together. Minimal logic.
 # Imports from: config.py, agent_loop.py
 # NOTE: main.py does NOT import vision.py or ollama_client.py directly.
+# Status: Empty shell
 # =============================================================================
 
 main.py -> exports:
@@ -124,7 +134,17 @@ main.py -> exports:
 #   -> agent_loop.py
 #       -> config.py
 #       -> vision.py
-#           -> screen_capture.py
+#           -> screen_capture.py  [COMPLETE]
 #       -> ollama_client.py
-#           -> config.py
+#           -> config.py          [COMPLETE]
 #       -> open-interpreter (external)
+
+# =============================================================================
+# FILE STATUS SUMMARY
+# =============================================================================
+# config.py          — Complete (2026-03-01 15:51 EST)
+# screen_capture.py  — Complete (2026-03-01 18:32 EST)
+# vision.py          — Empty shell
+# ollama_client.py   — Empty shell
+# agent_loop.py      — Empty shell
+# main.py            — Empty shell

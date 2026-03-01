@@ -16,7 +16,8 @@
 - **GitHub:** https://github.com/Fizzolas/AgentDesktopTest (public)
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
 - **config.py:** Complete — all 6 constants populated (2026-03-01 15:51 EST)
-- **All other base files:** Empty shells (main.py, agent_loop.py, vision.py, screen_capture.py, ollama_client.py)
+- **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
+- **Remaining empty shells:** main.py, agent_loop.py, vision.py, ollama_client.py
 
 ---
 
@@ -52,7 +53,7 @@
 | main.py | Entry point. Initializes config, starts agent via Open Interpreter | Empty shell |
 | agent_loop.py | Core goal loop wrapping Open Interpreter session | Empty shell |
 | vision.py | Vision pipeline. Screen frame analysis, returns structured data | Empty shell |
-| screen_capture.py | Raw screen capture. Returns np.ndarray via mss | Empty shell |
+| screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
 | ollama_client.py | Ollama API interface. query_model(), load_model() | Empty shell |
 | config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG | Complete |
 | PROJECT_CONTEXT.md | This file. Paste at session start | Active/Living |
@@ -89,7 +90,8 @@ config.py
 ## KNOWN FRAGILE AREAS
 
 - config.py variable names are imported by ollama_client.py AND agent_loop.py. Rename = double break.
-- screen_capture.py MUST return np.ndarray. vision.py depends on this type. Do not swap to PIL.Image.
+- screen_capture.py MUST return np.ndarray BGR (3-channel, uint8). vision.py depends on this type. Do not swap to PIL.Image or return BGRA.
+- mss returns BGRA by default — the [:, :, :3] alpha strip in capture_screen() is intentional. Do not remove it.
 - agent_loop.py is the ONLY file that calls vision.py and ollama_client.py. Not main.py.
 - Open Interpreter object must be configured in agent_loop.py, not main.py.
 - Do not add pip packages without logging them below in the active Dependencies section.
@@ -155,7 +157,6 @@ config.py
 - Restructured file as living/append-only changelog document
 - Files affected: PROJECT_CONTEXT.md
 
-
 ### [2026-03-01 15:55 EST] — Model Correction: VRAM Budget Adjustment
 - Clarified real-world VRAM budget: 8GB total, ~6GB available while agent is running
 - Qwen3-Coder:8b Q4_K_M (~5GB weights) was too close to the ceiling under real load
@@ -170,7 +171,6 @@ config.py
   - This leaves minimum 500MB headroom above the 6GB real-world budget
 - Updated CURRENT STATE section to reflect new model
 - Files affected: PROJECT_CONTEXT.md
-
 
 ### [2026-03-01 16:10 EST] — Open Interpreter Installed & Dependencies Resolved
 - open-interpreter 0.4.3 successfully installed via pip
@@ -187,7 +187,6 @@ config.py
 - Project is now ready for first code to be written into base files
 - Next step: build config.py (all other files import from it)
 - Files affected: PROJECT_CONTEXT.md
-
 
 ### [2026-03-01 15:51 EST] — config.py Populated | CONTRACTS.txt Finalized
 - config.py written from empty shell to first working version
@@ -213,3 +212,17 @@ config.py
 - open-interpreter 0.4.3 moved from "Still needed" to "Already installed" in DEPENDENCIES
   - Was installed in the 16:10 entry; "Still needed" entry was stale
 - Files affected: config.py, PROJECT_CONTEXT.md
+
+### [2026-03-01 18:32 EST] — screen_capture.py Complete
+- screen_capture.py written from empty shell to first working version
+- Implements capture_screen(region: dict | None = None) -> np.ndarray per contract
+- Key implementation notes:
+  - Uses mss.monitors[1] for primary monitor (index 0 = virtual combined monitor — not used)
+  - mss returns BGRA by default; [:, :, :3] strips alpha channel to produce BGR np.ndarray
+  - BGR output is required by vision.py and OpenCV downstream — do NOT change output format
+  - Uses context manager (with mss.mss() as sct) to ensure handle release after every call
+  - region=None path captures full primary monitor via SCREEN_REGION-equivalent defaults
+- KNOWN FRAGILE note added: do not remove the [:, :, :3] alpha strip — it is intentional
+- File status updated: Empty shell → Complete
+- Next recommended step: ollama_client.py (imports only config.py + requests, low blast radius)
+- Files affected: screen_capture.py, PROJECT_CONTEXT.md, CONTRACTS.txt
