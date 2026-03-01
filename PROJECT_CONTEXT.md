@@ -18,7 +18,8 @@
 - **config.py:** Complete — all 6 constants populated (2026-03-01 15:51 EST)
 - **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
 - **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented (2026-03-01 18:39 EST)
-- **Remaining empty shells:** main.py, agent_loop.py, vision.py
+- **vision.py:** Complete — analyze_frame(), get_screen_state() implemented (2026-03-01 18:45 EST)
+- **Remaining empty shells:** main.py, agent_loop.py
 
 ---
 
@@ -53,7 +54,7 @@
 |---|---|---|
 | main.py | Entry point. Initializes config, starts agent via Open Interpreter | Empty shell |
 | agent_loop.py | Core goal loop wrapping Open Interpreter session | Empty shell |
-| vision.py | Vision pipeline. Screen frame analysis, returns structured data | Empty shell |
+| vision.py | Vision pipeline. Screen frame analysis, returns structured data | **Complete** |
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
 | ollama_client.py | Ollama API interface. query_model(), load_model(), check_ollama_running() | **Complete** |
 | config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG | Complete |
@@ -74,7 +75,7 @@ agent_loop.py
   also wraps: open-interpreter (interpreter object)
 
 vision.py
-  imports: screen_capture.py
+  imports: screen_capture.py, cv2, easyocr, numpy
 
 screen_capture.py
   imports: mss (installed), numpy (installed)
@@ -96,6 +97,9 @@ config.py
 - ollama_client.query_model() uses /api/chat with stream:False. Do NOT switch to /api/generate or enable streaming — return type must stay str.
 - ollama_client.load_model() uses /api/generate with empty prompt + keep_alive. This is the correct Ollama warm-up pattern. Do not change the endpoint.
 - query_model() calls check_ollama_running() at entry. Do not remove this guard — it is what raises ConnectionError per contract.
+- vision._reader is initialized ONCE at module load (easyocr.Reader). Do NOT move it inside analyze_frame() — it would re-init the GPU model on every call.
+- vision.analyze_frame() expects BGR np.ndarray input. Passing BGRA or PIL.Image will break the cv2 and EasyOCR pipeline.
+- vision return dict keys are exactly: "description", "elements", "text". agent_loop.py will key into these by name. Do not rename.
 - agent_loop.py is the ONLY file that calls vision.py and ollama_client.py. Not main.py.
 - Open Interpreter object must be configured in agent_loop.py, not main.py.
 - Do not add pip packages without logging them below in the active Dependencies section.
@@ -252,3 +256,25 @@ config.py
 - File status updated: Empty shell → Complete
 - Next recommended step: vision.py (imports screen_capture.py, uses EasyOCR + OpenCV)
 - Files affected: ollama_client.py, PROJECT_CONTEXT.md, CONTRACTS.txt
+
+### [2026-03-01 18:45 EST] — vision.py Complete
+- vision.py written from empty shell to first working version
+- Implements both contracted functions:
+  - analyze_frame(img: np.ndarray) -> dict
+    - Two-pass analysis: OCR pass (EasyOCR) + contour pass (OpenCV Canny)
+    - OCR pass: extracts text_block elements with bbox [x,y,w,h], text, confidence
+    - Contour pass: detects button_candidate regions via aspect ratio filter (1.5–10) and height filter (10–80px)
+    - Returns {"description": str, "elements": list, "text": str} exactly per contract
+    - description capped at 300-char text preview to avoid bloating agent prompt context
+  - get_screen_state(region: dict | None = None) -> dict
+    - One-liner wrapper: capture_screen(region) -> analyze_frame(img)
+    - No direct mss usage — boundary maintained per dependency rules
+- EasyOCR reader (_reader) initialized ONCE at module load with gpu=True
+  - Initialization is slow (~2-5s); must stay at module level, NOT inside analyze_frame()
+  - gpu=True uses RTX 4070 for OCR inference — correct for this hardware
+- Element schema per entry: {"type": str, "bbox": [x,y,w,h], "text": str, "confidence": float}
+- KNOWN FRAGILE notes added: _reader must stay at module level; input must be BGR np.ndarray; return dict keys must not be renamed
+- Dependency graph updated: vision.py now lists cv2, easyocr, numpy as explicit imports
+- File status updated: Empty shell → Complete
+- Next recommended step: agent_loop.py (final orchestration layer before main.py)
+- Files affected: vision.py, PROJECT_CONTEXT.md, CONTRACTS.txt

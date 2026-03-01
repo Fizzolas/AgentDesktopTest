@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-01 18:39 EST
+# Last updated: 2026-03-01 18:45 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -41,19 +41,29 @@ screen_capture.py -> exports:
 # =============================================================================
 # vision.py
 # Role: Analyzes screen frames. Returns structured description for the agent.
-# Imports from: screen_capture.py
-# Status: Empty shell
+# Imports from: screen_capture.py, cv2, easyocr, numpy
+# Status: Complete
+# FRAGILE: _reader (easyocr.Reader) is initialized at module load with gpu=True.
+#          Do NOT move it inside analyze_frame() — re-init on every call = 2-5s penalty per tick.
+#          analyze_frame() input MUST be BGR np.ndarray. BGRA or PIL.Image will break the pipeline.
+#          Return dict keys are exactly: "description", "elements", "text".
+#          agent_loop.py keys into these by name — do NOT rename them.
 # =============================================================================
 
 vision.py -> exports:
   analyze_frame(img: np.ndarray) -> dict
-    # Analyzes a screen frame. Returns structured dict describing screen content.
+    # Analyzes a BGR screen frame using EasyOCR + OpenCV contour detection.
+    # Two-pass: OCR pass extracts text_block elements; contour pass finds button_candidates.
     # Return format: {"description": str, "elements": list, "text": str}
+    # Each element: {"type": str, "bbox": [x, y, w, h], "text": str, "confidence": float}
+    # Element types: "text_block", "button_candidate"
+    # description is capped at 300-char text preview to avoid bloating agent prompt context.
 
   get_screen_state(region: dict | None = None) -> dict
-    # Convenience wrapper: captures screen then analyzes it in one call.
-    # Calls capture_screen() then analyze_frame().
-    # Returns same format as analyze_frame().
+    # Convenience wrapper: calls capture_screen(region) then analyze_frame(img).
+    # No direct mss usage inside this function.
+    # Returns same format as analyze_frame():
+    # {"description": str, "elements": list, "text": str}
 
 # =============================================================================
 # ollama_client.py
@@ -141,7 +151,7 @@ main.py -> exports:
 #   -> config.py                  [COMPLETE]
 #   -> agent_loop.py
 #       -> config.py              [COMPLETE]
-#       -> vision.py
+#       -> vision.py              [COMPLETE]
 #           -> screen_capture.py  [COMPLETE]
 #       -> ollama_client.py       [COMPLETE]
 #           -> config.py          [COMPLETE]
@@ -153,6 +163,6 @@ main.py -> exports:
 # config.py          — Complete (2026-03-01 15:51 EST)
 # screen_capture.py  — Complete (2026-03-01 18:32 EST)
 # ollama_client.py   — Complete (2026-03-01 18:39 EST)
-# vision.py          — Empty shell
+# vision.py          — Complete (2026-03-01 18:45 EST)
 # agent_loop.py      — Empty shell
 # main.py            — Empty shell
