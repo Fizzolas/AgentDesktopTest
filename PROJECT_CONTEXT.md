@@ -8,7 +8,7 @@
 ## CURRENT STATE (always reflects latest entry)
 
 - **Agent Framework:** Open Interpreter (via Ollama backend)
-- **Primary Model:** qwen3-coder:8b (Q4_K_M quantized) via Ollama
+- **Primary Model:** qwen2.5-coder:7b (Q4_K_M) via Ollama | ~4.3GB VRAM | real-world safe
 - **Fallback Model:** deepseek-r1:8b (Q4_K_M) for heavy reasoning tasks
 - **OS:** Windows 10 (build 10.0.26200) — hostname: FizzBeast
 - **Python:** 3.11.9 at C:/Files311/
@@ -152,4 +152,20 @@ config.py
 - Hostname confirmed: FizzBeast
 - Python confirmed: 3.11.9 at C:/Files311/
 - Restructured file as living/append-only changelog document
+- Files affected: PROJECT_CONTEXT.md
+
+
+### [2026-03-01 15:55 EST] — Model Correction: VRAM Budget Adjustment
+- Clarified real-world VRAM budget: 8GB total, ~6GB available while agent is running
+- Qwen3-Coder:8b Q4_K_M (~5GB weights) was too close to the ceiling under real load
+- New primary model: **qwen2.5-coder:7b (Q4_K_M)** via Ollama
+  - Weights: ~4.3GB VRAM, leaving ~1.7GB headroom for KV cache
+  - Purpose-built for code generation, tool calling, and agentic tasks
+  - Confirmed available on Ollama library, works with Open Interpreter natively
+  - Ollama run command: `ollama run qwen2.5-coder:7b`
+  - Open Interpreter flag: `interpreter --model ollama/qwen2.5-coder:7b`
+- Fallback model unchanged: deepseek-r1:8b Q4_K_M (use only when 8b reasoning needed)
+- Hard rule added: do NOT load any model whose Q4_K_M weights exceed 5.5GB
+  - This leaves minimum 500MB headroom above the 6GB real-world budget
+- Updated CURRENT STATE section to reflect new model
 - Files affected: PROJECT_CONTEXT.md
