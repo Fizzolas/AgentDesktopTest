@@ -15,7 +15,8 @@
 - **Project Root (local):** D:/AgentDesktopTest
 - **GitHub:** https://github.com/Fizzolas/AgentDesktopTest (public)
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
-- **All base files:** created as empty shells (see File Structure below)
+- **config.py:** Complete — all 6 constants populated (2026-03-01 15:51 EST)
+- **All other base files:** Empty shells (main.py, agent_loop.py, vision.py, screen_capture.py, ollama_client.py)
 
 ---
 
@@ -53,9 +54,9 @@
 | vision.py | Vision pipeline. Screen frame analysis, returns structured data | Empty shell |
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | Empty shell |
 | ollama_client.py | Ollama API interface. query_model(), load_model() | Empty shell |
-| config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY | Empty shell |
+| config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG | Complete |
 | PROJECT_CONTEXT.md | This file. Paste at session start | Active/Living |
-| CONTRACTS.txt | Function contracts. Paste at session start | Skeleton |
+| CONTRACTS.txt | Function contracts. Paste at session start | Complete |
 | README.md | GitHub readme | Default |
 
 ---
@@ -108,10 +109,10 @@ config.py
 - keyboard 0.13.5
 - openai 2.24.0 (available if needed for OI API compat)
 - psutil 7.1.3
+- open-interpreter 0.4.3 (installed 2026-03-01 16:10 EST — see changelog)
 
 ### Still needed
-- open-interpreter (pip install open-interpreter)
-- Confirm: ollama running as local service on port 11434
+- Confirm: ollama running as local service on port 11434 (runtime check — not a pip package)
 
 ---
 
@@ -186,3 +187,29 @@ config.py
 - Project is now ready for first code to be written into base files
 - Next step: build config.py (all other files import from it)
 - Files affected: PROJECT_CONTEXT.md
+
+
+### [2026-03-01 15:51 EST] — config.py Populated | CONTRACTS.txt Finalized
+- config.py written from empty shell to first working version
+- All 6 constants defined and committed to main (commit: 83d812c):
+  - MODEL_NAME: str = "qwen2.5-coder:7b"
+    - Uses bare Ollama model name, NOT the OI-prefixed form
+    - "ollama/qwen2.5-coder:7b" is for Open Interpreter CLI/code only — not raw Ollama HTTP API
+  - OLLAMA_URL: str = "http://localhost:11434"
+  - SCREEN_REGION: dict = {"top": 0, "left": 0, "width": 1920, "height": 1080}
+    - Set to full primary monitor. Adjust if display resolution or multi-monitor config changes.
+  - LOOP_DELAY: float = 2.0
+    - Conservative starting tick rate. Tune down if agent feels sluggish, up if it over-polls.
+  - MAX_RETRIES: int = 3
+    - Standard retry floor for ollama_client.py query failure handling.
+  - DEBUG: bool = False
+    - Flip to True for verbose logging during active development/debugging sessions.
+- Header comment in config.py updated to include MAX_RETRIES and DEBUG
+  - Original empty shell header only listed 4 exports; CONTRACTS defines 6 — corrected.
+- CONTRACTS.txt confirmed complete — all function contracts for all source files defined:
+  - config.py (variables), screen_capture.py, vision.py, ollama_client.py, agent_loop.py, main.py
+  - OI integration notes and full dependency chain summary included
+  - Status updated: Skeleton → Complete
+- open-interpreter 0.4.3 moved from "Still needed" to "Already installed" in DEPENDENCIES
+  - Was installed in the 16:10 entry; "Still needed" entry was stale
+- Files affected: config.py, PROJECT_CONTEXT.md
