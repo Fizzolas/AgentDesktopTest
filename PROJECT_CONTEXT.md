@@ -17,7 +17,8 @@
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
 - **config.py:** Complete — all 6 constants populated (2026-03-01 15:51 EST)
 - **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
-- **Remaining empty shells:** main.py, agent_loop.py, vision.py, ollama_client.py
+- **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented (2026-03-01 18:39 EST)
+- **Remaining empty shells:** main.py, agent_loop.py, vision.py
 
 ---
 
@@ -54,7 +55,7 @@
 | agent_loop.py | Core goal loop wrapping Open Interpreter session | Empty shell |
 | vision.py | Vision pipeline. Screen frame analysis, returns structured data | Empty shell |
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
-| ollama_client.py | Ollama API interface. query_model(), load_model() | Empty shell |
+| ollama_client.py | Ollama API interface. query_model(), load_model(), check_ollama_running() | **Complete** |
 | config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG | Complete |
 | PROJECT_CONTEXT.md | This file. Paste at session start | Active/Living |
 | CONTRACTS.txt | Function contracts. Paste at session start | Complete |
@@ -92,6 +93,9 @@ config.py
 - config.py variable names are imported by ollama_client.py AND agent_loop.py. Rename = double break.
 - screen_capture.py MUST return np.ndarray BGR (3-channel, uint8). vision.py depends on this type. Do not swap to PIL.Image or return BGRA.
 - mss returns BGRA by default — the [:, :, :3] alpha strip in capture_screen() is intentional. Do not remove it.
+- ollama_client.query_model() uses /api/chat with stream:False. Do NOT switch to /api/generate or enable streaming — return type must stay str.
+- ollama_client.load_model() uses /api/generate with empty prompt + keep_alive. This is the correct Ollama warm-up pattern. Do not change the endpoint.
+- query_model() calls check_ollama_running() at entry. Do not remove this guard — it is what raises ConnectionError per contract.
 - agent_loop.py is the ONLY file that calls vision.py and ollama_client.py. Not main.py.
 - Open Interpreter object must be configured in agent_loop.py, not main.py.
 - Do not add pip packages without logging them below in the active Dependencies section.
@@ -226,3 +230,25 @@ config.py
 - File status updated: Empty shell → Complete
 - Next recommended step: ollama_client.py (imports only config.py + requests, low blast radius)
 - Files affected: screen_capture.py, PROJECT_CONTEXT.md, CONTRACTS.txt
+
+### [2026-03-01 18:39 EST] — ollama_client.py Complete
+- ollama_client.py written from empty shell to first working version
+- Implements all 3 contracted functions:
+  - check_ollama_running() -> bool
+    - GET to OLLAMA_URL root with 3s timeout
+    - Returns True on HTTP 200, False on any exception
+  - load_model(model_name: str) -> bool
+    - POST to /api/generate with empty prompt + keep_alive: "5m"
+    - Correct Ollama warm-up pattern; timeout=30 to allow weight loading
+    - Returns True on HTTP 200, False on exception
+  - query_model(prompt: str, system: str | None = None) -> str
+    - POST to /api/chat with stream: False — returns plain str, no streaming
+    - Prepends optional system message in messages array if provided
+    - Calls check_ollama_running() at entry — raises ConnectionError if not live
+    - Retries up to MAX_RETRIES (3) on transient failure before raising ConnectionError
+    - Uses MODEL_NAME and OLLAMA_URL from config.py
+- All 3 functions respect DEBUG flag from config.py for verbose print output
+- KNOWN FRAGILE notes added for endpoint choices and streaming=False requirement
+- File status updated: Empty shell → Complete
+- Next recommended step: vision.py (imports screen_capture.py, uses EasyOCR + OpenCV)
+- Files affected: ollama_client.py, PROJECT_CONTEXT.md, CONTRACTS.txt

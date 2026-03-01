@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-01 18:32 EST
+# Last updated: 2026-03-01 18:39 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -58,23 +58,31 @@ vision.py -> exports:
 # =============================================================================
 # ollama_client.py
 # Role: Interface to local Ollama model via HTTP API.
-# Imports from: config.py
-# Status: Empty shell
+# Imports from: config.py (MODEL_NAME, OLLAMA_URL, MAX_RETRIES, DEBUG), requests
+# Status: Complete
+# FRAGILE: query_model() uses /api/chat with stream:False. Return type is str.
+#          Do NOT switch to /api/generate or enable streaming.
+#          load_model() uses /api/generate with empty prompt + keep_alive — correct warm-up pattern.
+#          check_ollama_running() guard in query_model() is what raises ConnectionError. Do not remove.
 # =============================================================================
 
 ollama_client.py -> exports:
-  query_model(prompt: str, system: str | None = None) -> str
-    # Sends prompt to Ollama model. Returns model response as string.
-    # Uses MODEL_NAME and OLLAMA_URL from config.py.
-    # Raises: ConnectionError if Ollama not running.
+  check_ollama_running() -> bool
+    # GET to OLLAMA_URL root with 3s timeout.
+    # Returns True if HTTP 200, False on any exception.
+    # Called by query_model() as entry guard.
 
   load_model(model_name: str) -> bool
-    # Warms up / preloads a model in Ollama.
-    # Returns True if successful, False if failed.
+    # Warms up / preloads a model in Ollama via POST /api/generate.
+    # Payload: empty prompt + keep_alive: "5m". Timeout: 30s.
+    # Returns True if successful (HTTP 200), False if failed.
 
-  check_ollama_running() -> bool
-    # Pings OLLAMA_URL to confirm service is live.
-    # Returns True if reachable, False otherwise.
+  query_model(prompt: str, system: str | None = None) -> str
+    # Sends prompt to Ollama model via POST /api/chat with stream:False.
+    # Uses MODEL_NAME and OLLAMA_URL from config.py.
+    # Optional system param prepended as system message if provided.
+    # Retries up to MAX_RETRIES times on transient failure.
+    # Raises: ConnectionError if Ollama not running or all retries exhausted.
 
 # =============================================================================
 # agent_loop.py
@@ -130,12 +138,12 @@ main.py -> exports:
 # DEPENDENCY CHAIN SUMMARY
 # =============================================================================
 # main.py
-#   -> config.py
+#   -> config.py                  [COMPLETE]
 #   -> agent_loop.py
-#       -> config.py
+#       -> config.py              [COMPLETE]
 #       -> vision.py
 #           -> screen_capture.py  [COMPLETE]
-#       -> ollama_client.py
+#       -> ollama_client.py       [COMPLETE]
 #           -> config.py          [COMPLETE]
 #       -> open-interpreter (external)
 
@@ -144,7 +152,7 @@ main.py -> exports:
 # =============================================================================
 # config.py          — Complete (2026-03-01 15:51 EST)
 # screen_capture.py  — Complete (2026-03-01 18:32 EST)
+# ollama_client.py   — Complete (2026-03-01 18:39 EST)
 # vision.py          — Empty shell
-# ollama_client.py   — Empty shell
 # agent_loop.py      — Empty shell
 # main.py            — Empty shell
