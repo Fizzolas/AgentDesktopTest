@@ -1,0 +1,3 @@
+# CONTRACTS
+# Fill in function signatures as files are built
+# Format: filename.py -> exports: func(args) -> return_type
