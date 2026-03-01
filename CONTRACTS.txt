@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-01 18:45 EST
+# Last updated: 2026-03-01 18:54 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -97,25 +97,37 @@ ollama_client.py -> exports:
 # =============================================================================
 # agent_loop.py
 # Role: Core autonomous goal loop. Orchestrates all components.
-# Imports from: config.py, vision.py, ollama_client.py, screen_capture.py
-# Also wraps: open-interpreter (interpreter object)
-# NOTE: This is the ONLY file that calls vision.py and ollama_client.py directly.
-# Status: Empty shell
+# Imports from: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG)
+#               vision.py (get_screen_state)
+#               ollama_client.py (check_ollama_running, query_model)
+#               open-interpreter (interpreter)
+#               time (stdlib)
+# Status: Complete
+# FRAGILE: interpreter is configured at module load — do NOT re-configure in main.py or elsewhere.
+#          run() resets interpreter.messages = [] at start — each goal gets a clean session.
+#          GOAL_COMPLETE is the exact completion signal string — do not change it.
+#          _running is module-level state shared between run() and stop() — do not make it local.
+#          auto_run=True means OI executes code without confirmation. Intentional for autonomy.
+#          offline=True prevents cloud fallback. Do not remove.
 # =============================================================================
 
 agent_loop.py -> exports:
   run(goal: str) -> None
     # Main entry point for the agent loop.
-    # Accepts a plain-English goal string.
-    # Runs continuously until goal is marked complete or user interrupts.
+    # Calls check_ollama_running() at entry — raises ConnectionError if not live.
+    # Resets interpreter session (messages = [], system_message = _SYSTEM_PROMPT).
+    # Loop: get_screen_state() -> step() -> check GOAL_COMPLETE -> sleep(LOOP_DELAY).
+    # Exits on GOAL_COMPLETE in action string, KeyboardInterrupt, or stop() call.
 
   step(goal: str, screen_state: dict) -> str
-    # Runs a single agent tick. Takes current goal + screen state.
-    # Queries model, returns next action string.
+    # Runs a single agent tick.
+    # Builds prompt from goal + screen_state["description"] + screen_state["text"][:500].
+    # Routes through interpreter.chat(display=DEBUG, stream=False).
+    # Returns last assistant message content as action string.
 
   stop() -> None
-    # Gracefully stops the agent loop.
-    # Cleans up interpreter session.
+    # Sets _running = False — run() exits on next loop iteration.
+    # Clears interpreter.messages to free memory.
 
 # =============================================================================
 # main.py
@@ -135,11 +147,13 @@ main.py -> exports:
 # =============================================================================
 # OI version: 0.4.3
 # Run via Ollama: interpreter --model ollama/qwen2.5-coder:7b
-# Or in code:
+# Or in code (as implemented in agent_loop.py):
 #   from interpreter import interpreter
 #   interpreter.llm.model = "ollama/qwen2.5-coder:7b"
 #   interpreter.llm.api_base = "http://localhost:11434"
-#   interpreter.chat("your goal here")
+#   interpreter.auto_run = True
+#   interpreter.offline = True
+#   interpreter.chat("your goal here", display=False, stream=False)
 #
 # The interpreter object is instantiated ONCE in agent_loop.py and reused.
 # Do not instantiate it in main.py or any other file.
@@ -149,7 +163,7 @@ main.py -> exports:
 # =============================================================================
 # main.py
 #   -> config.py                  [COMPLETE]
-#   -> agent_loop.py
+#   -> agent_loop.py              [COMPLETE]
 #       -> config.py              [COMPLETE]
 #       -> vision.py              [COMPLETE]
 #           -> screen_capture.py  [COMPLETE]
@@ -164,5 +178,5 @@ main.py -> exports:
 # screen_capture.py  — Complete (2026-03-01 18:32 EST)
 # ollama_client.py   — Complete (2026-03-01 18:39 EST)
 # vision.py          — Complete (2026-03-01 18:45 EST)
-# agent_loop.py      — Empty shell
+# agent_loop.py      — Complete (2026-03-01 18:54 EST)
 # main.py            — Empty shell

@@ -19,7 +19,8 @@
 - **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
 - **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented (2026-03-01 18:39 EST)
 - **vision.py:** Complete — analyze_frame(), get_screen_state() implemented (2026-03-01 18:45 EST)
-- **Remaining empty shells:** main.py, agent_loop.py
+- **agent_loop.py:** Complete — run(), step(), stop() implemented (2026-03-01 18:54 EST)
+- **Remaining empty shells:** main.py
 
 ---
 
@@ -53,7 +54,7 @@
 | File | Purpose | Status |
 |---|---|---|
 | main.py | Entry point. Initializes config, starts agent via Open Interpreter | Empty shell |
-| agent_loop.py | Core goal loop wrapping Open Interpreter session | Empty shell |
+| agent_loop.py | Core goal loop wrapping Open Interpreter session | **Complete** |
 | vision.py | Vision pipeline. Screen frame analysis, returns structured data | **Complete** |
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
 | ollama_client.py | Ollama API interface. query_model(), load_model(), check_ollama_running() | **Complete** |
@@ -71,8 +72,10 @@ main.py
   imports: config.py, agent_loop.py
 
 agent_loop.py
-  imports: config.py, vision.py, ollama_client.py, screen_capture.py
-  also wraps: open-interpreter (interpreter object)
+  imports: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG)
+           vision.py (get_screen_state)
+           ollama_client.py (check_ollama_running, query_model)
+           open-interpreter (interpreter object)
 
 vision.py
   imports: screen_capture.py, cv2, easyocr, numpy
@@ -99,7 +102,11 @@ config.py
 - query_model() calls check_ollama_running() at entry. Do not remove this guard — it is what raises ConnectionError per contract.
 - vision._reader is initialized ONCE at module load (easyocr.Reader). Do NOT move it inside analyze_frame() — it would re-init the GPU model on every call.
 - vision.analyze_frame() expects BGR np.ndarray input. Passing BGRA or PIL.Image will break the cv2 and EasyOCR pipeline.
-- vision return dict keys are exactly: "description", "elements", "text". agent_loop.py will key into these by name. Do not rename.
+- vision return dict keys are exactly: "description", "elements", "text". agent_loop.py keys into these by name. Do not rename.
+- agent_loop interpreter is configured at module load. Do NOT re-configure in main.py or any other file.
+- agent_loop.run() resets interpreter.messages = [] at start of every call — each goal gets a clean session.
+- GOAL_COMPLETE is the completion signal string. run() checks "GOAL_COMPLETE" in action. Do not change this string.
+- agent_loop._running is module-level state. stop() sets it False; run() reads it. Do not make it local.
 - agent_loop.py is the ONLY file that calls vision.py and ollama_client.py. Not main.py.
 - Open Interpreter object must be configured in agent_loop.py, not main.py.
 - Do not add pip packages without logging them below in the active Dependencies section.
@@ -232,49 +239,48 @@ config.py
   - region=None path captures full primary monitor via SCREEN_REGION-equivalent defaults
 - KNOWN FRAGILE note added: do not remove the [:, :, :3] alpha strip — it is intentional
 - File status updated: Empty shell → Complete
-- Next recommended step: ollama_client.py (imports only config.py + requests, low blast radius)
 - Files affected: screen_capture.py, PROJECT_CONTEXT.md, CONTRACTS.txt
 
 ### [2026-03-01 18:39 EST] — ollama_client.py Complete
 - ollama_client.py written from empty shell to first working version
-- Implements all 3 contracted functions:
-  - check_ollama_running() -> bool
-    - GET to OLLAMA_URL root with 3s timeout
-    - Returns True on HTTP 200, False on any exception
-  - load_model(model_name: str) -> bool
-    - POST to /api/generate with empty prompt + keep_alive: "5m"
-    - Correct Ollama warm-up pattern; timeout=30 to allow weight loading
-    - Returns True on HTTP 200, False on exception
-  - query_model(prompt: str, system: str | None = None) -> str
-    - POST to /api/chat with stream: False — returns plain str, no streaming
-    - Prepends optional system message in messages array if provided
-    - Calls check_ollama_running() at entry — raises ConnectionError if not live
-    - Retries up to MAX_RETRIES (3) on transient failure before raising ConnectionError
-    - Uses MODEL_NAME and OLLAMA_URL from config.py
+- Implements all 3 contracted functions: check_ollama_running(), load_model(), query_model()
 - All 3 functions respect DEBUG flag from config.py for verbose print output
-- KNOWN FRAGILE notes added for endpoint choices and streaming=False requirement
 - File status updated: Empty shell → Complete
-- Next recommended step: vision.py (imports screen_capture.py, uses EasyOCR + OpenCV)
 - Files affected: ollama_client.py, PROJECT_CONTEXT.md, CONTRACTS.txt
 
 ### [2026-03-01 18:45 EST] — vision.py Complete
 - vision.py written from empty shell to first working version
-- Implements both contracted functions:
-  - analyze_frame(img: np.ndarray) -> dict
-    - Two-pass analysis: OCR pass (EasyOCR) + contour pass (OpenCV Canny)
-    - OCR pass: extracts text_block elements with bbox [x,y,w,h], text, confidence
-    - Contour pass: detects button_candidate regions via aspect ratio filter (1.5–10) and height filter (10–80px)
-    - Returns {"description": str, "elements": list, "text": str} exactly per contract
-    - description capped at 300-char text preview to avoid bloating agent prompt context
-  - get_screen_state(region: dict | None = None) -> dict
-    - One-liner wrapper: capture_screen(region) -> analyze_frame(img)
-    - No direct mss usage — boundary maintained per dependency rules
+- Implements analyze_frame() and get_screen_state() per contract
 - EasyOCR reader (_reader) initialized ONCE at module load with gpu=True
-  - Initialization is slow (~2-5s); must stay at module level, NOT inside analyze_frame()
-  - gpu=True uses RTX 4070 for OCR inference — correct for this hardware
-- Element schema per entry: {"type": str, "bbox": [x,y,w,h], "text": str, "confidence": float}
-- KNOWN FRAGILE notes added: _reader must stay at module level; input must be BGR np.ndarray; return dict keys must not be renamed
-- Dependency graph updated: vision.py now lists cv2, easyocr, numpy as explicit imports
+- Element schema: {"type": str, "bbox": [x,y,w,h], "text": str, "confidence": float}
 - File status updated: Empty shell → Complete
-- Next recommended step: agent_loop.py (final orchestration layer before main.py)
 - Files affected: vision.py, PROJECT_CONTEXT.md, CONTRACTS.txt
+
+### [2026-03-01 18:54 EST] — agent_loop.py Complete
+- agent_loop.py written from empty shell to first working version
+- Implements all 3 contracted functions:
+  - run(goal: str) -> None
+    - Resets interpreter.messages = [] and injects _SYSTEM_PROMPT at start of each call
+    - Loops: get_screen_state() -> step() -> check for GOAL_COMPLETE -> sleep(LOOP_DELAY)
+    - Exits on GOAL_COMPLETE signal, KeyboardInterrupt, or stop() call
+    - Calls check_ollama_running() at entry — raises ConnectionError if Ollama not live
+  - step(goal: str, screen_state: dict) -> str
+    - Builds prompt from goal + screen_state["description"] + screen_state["text"][:500]
+    - Routes through interpreter.chat() with display=DEBUG, stream=False
+    - Walks response messages in reverse to extract last assistant content as action string
+  - stop() -> None
+    - Sets _running = False (run() exits on next iteration)
+    - Clears interpreter.messages to free memory
+- Open Interpreter configured at module load:
+  - interpreter.llm.model = f"ollama/{MODEL_NAME}"
+  - interpreter.llm.api_base = OLLAMA_URL
+  - interpreter.auto_run = True (no confirmation prompts)
+  - interpreter.verbose = DEBUG
+  - interpreter.offline = True (local only, no cloud fallback)
+- _SYSTEM_PROMPT defines agent role, step-by-step reasoning instruction, and GOAL_COMPLETE signal
+- _running is module-level bool; shared between run() and stop()
+- KNOWN FRAGILE notes added for interpreter config, session reset, GOAL_COMPLETE signal, _running state
+- Dependency graph updated with explicit imports used
+- File status updated: Empty shell → Complete
+- Next step: main.py (final wiring layer)
+- Files affected: agent_loop.py, PROJECT_CONTEXT.md, CONTRACTS.txt
