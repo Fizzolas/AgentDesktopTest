@@ -1,15 +1,14 @@
 # config.py
 # Role: Global constants. Imported by nearly everything.
-# Exports: MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG, FORCE_CPU_ONLY, OLLAMA_NUM_GPU, OLLAMA_NUM_THREAD
+# Exports: MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU
 
 # Model configuration
 MODEL_NAME: str = "qwen2.5-coder:7b"
 OLLAMA_URL: str = "http://localhost:11434"
 
 # GPU and memory configuration
-FORCE_CPU_ONLY: bool = True  # Block GPU usage entirely - forces CPU-only inference
-OLLAMA_NUM_GPU: int = 0      # Number of GPU layers to offload (0 = all in RAM)
-OLLAMA_NUM_THREAD: int = 10  # CPU threads for inference (adjust based on CPU cores)
+BLOCK_CPU_COMPUTE: bool = True   # Block CPU from doing ANY GPU calculations
+OLLAMA_NUM_GPU: int = 999        # Force ALL layers to GPU (999 = unlimited, offload to RAM if VRAM full)
 
 # Screen capture region (full primary monitor by default)
 SCREEN_REGION: dict = {
