@@ -11,6 +11,7 @@
 - **Primary Model:** qwen2.5-coder:7b (Q4_K_M) via Ollama | GPU-only with RAM offloading
 - **Fallback Model:** deepseek-r1:8b (Q4_K_M) for heavy reasoning tasks
 - **Memory Strategy:** GPU-only compute, RAM weight offloading enabled, CPU compute blocked
+- **Monitoring:** monitor.py tracks Ollama, system resources, GPU stats → monitor.log (rolling, 10MB max)
 - **OS:** Windows 10 (build 10.0.26200) — hostname: FizzBeast
 - **Python:** 3.11.9 at C:/Files311/
 - **Project Root (local):** D:/AgentDesktopTest
@@ -22,6 +23,7 @@
 - **vision.py:** Complete — analyze_frame(), get_screen_state() implemented, EasyOCR gpu=True (2026-03-01 18:45 EST)
 - **agent_loop.py:** Complete — run(), step(), stop() implemented, GPU-only + RAM offload enforced (2026-03-01 19:21 EST)
 - **main.py:** Complete — main() implemented (2026-03-01 18:59 EST)
+- **monitor.py:** Complete — system health monitoring with rolling log (2026-03-01 19:29 EST)
 - **Remaining empty shells:** NONE — all files complete
 
 ---
@@ -63,6 +65,7 @@
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
 | ollama_client.py | Ollama API interface. query_model(), load_model(), check_ollama_running() | **Complete** |
 | config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU | **Complete** |
+| monitor.py | System health monitor. Tracks Ollama, resources, GPU. Writes monitor.log | **Complete** |
 | PROJECT_CONTEXT.md | This file. Paste at session start | Active/Living |
 | CONTRACTS.txt | Function contracts. Paste at session start | Complete |
 | README.md | GitHub readme | Default |
@@ -94,6 +97,10 @@ screen_capture.py
 ollama_client.py
   imports: config.py, requests (installed)
 
+monitor.py
+  imports: config.py (OLLAMA_URL, MODEL_NAME, DEBUG)
+           psutil, requests, time, threading, os, json, pathlib
+
 config.py
   imports: (none — base constants only)
 ```
@@ -102,7 +109,7 @@ config.py
 
 ## KNOWN FRAGILE AREAS
 
-- config.py variable names are imported by ollama_client.py AND agent_loop.py AND main.py. Rename = triple break.
+- config.py variable names are imported by ollama_client.py AND agent_loop.py AND main.py AND monitor.py. Rename = quadruple break.
 - config.py BLOCK_CPU_COMPUTE and OLLAMA_NUM_GPU control critical GPU/RAM behavior. Do not modify without understanding implications.
 - agent_loop.py sets CUDA environment variables at module load. These MUST execute before interpreter initialization.
 - CUDA_VISIBLE_DEVICES=0 hardcoded to RTX 4070 (GPU 0). Multi-GPU systems need adjustment.
@@ -121,6 +128,8 @@ config.py
 - agent_loop._running is module-level state. stop() sets it False; run() reads it. Do not make it local.
 - agent_loop.py is the ONLY file that calls vision.py. Not main.py.
 - main.py calls ollama_client only for startup check and model warm-up. All runtime calls go through agent_loop.
+- monitor.py runs in a daemon thread. It does NOT block main execution. Can be run standalone: python monitor.py
+- monitor.log auto-rotates at 10MB. Old log becomes monitor.log.old (single backup only).
 - Do not add pip packages without logging them below in the active Dependencies section.
 
 ---
@@ -137,11 +146,12 @@ config.py
 - requests (via httpx 0.28.1)
 - keyboard 0.13.5
 - openai 2.24.0 (available if needed for OI API compat)
-- psutil 7.1.3
+- psutil 7.1.3 (used by monitor.py)
 - open-interpreter 0.4.3 (installed 2026-03-01 16:10 EST — see changelog)
 
 ### Still needed
 - Confirm: ollama running as local service on port 11434 (runtime check — not a pip package)
+- Optional: nvidia-smi in PATH for GPU stats in monitor.py (auto-detected)
 
 ---
 
@@ -232,3 +242,13 @@ config.py
 - VRAM budget removed — RAM offloading handles oversized models
 - Memory strategy: GPU-only inference, RAM weight offloading, zero CPU compute
 - Files affected: config.py, agent_loop.py, PROJECT_CONTEXT.md, CONTRACTS.txt
+
+### [2026-03-01 19:29 EST] — System Monitor Added
+- monitor.py: Background health monitor tracking Ollama, system resources, GPU stats
+- Runs in daemon thread, writes to monitor.log (rolling 10MB limit, single backup)
+- Logs: Ollama reachability/response time, model load status, RAM/CPU/GPU usage, temperature
+- Warnings: Ollama slow/unreachable, high RAM (>90%), high GPU util (>95%), high temp (>85°C)
+- Periodic snapshots every ~25 seconds with full system state
+- Can be run standalone: python monitor.py (Ctrl+C to stop)
+- Standalone mode does NOT start agent loop — monitor only
+- Files affected: monitor.py, PROJECT_CONTEXT.md
