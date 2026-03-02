@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-01 18:54 EST
+# Last updated: 2026-03-01 18:59 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -132,15 +132,24 @@ agent_loop.py -> exports:
 # =============================================================================
 # main.py
 # Role: Entry point. Wires config + agent loop together. Minimal logic.
-# Imports from: config.py, agent_loop.py
-# NOTE: main.py does NOT import vision.py or ollama_client.py directly.
-# Status: Empty shell
+# Imports from: config.py (DEBUG, MODEL_NAME, OLLAMA_URL)
+#               agent_loop.py (run)
+#               ollama_client.py (check_ollama_running, load_model) [startup only — not runtime]
+# Status: Complete
+# NOTE: ollama_client is imported ONLY for the startup Ollama check and model warm-up.
+#       All runtime Ollama calls go through agent_loop.py.
+#       main.py does NOT import vision.py or configure the interpreter.
 # =============================================================================
 
 main.py -> exports:
   main() -> None
-    # Initializes config, confirms Ollama is running, prompts user for goal,
-    # then calls agent_loop.run(goal).
+    # 1. Prints startup banner (model, URL, debug state).
+    # 2. Calls check_ollama_running() — exits with sys.exit(1) if Ollama not live.
+    # 3. Calls load_model(MODEL_NAME) — warns but continues if warm-up fails.
+    # 4. Prompts user for goal string via input(). Exits cleanly on empty or Ctrl+C.
+    # 5. Calls agent_loop.run(goal).
+    # 6. Catches ConnectionError and unexpected exceptions — exits with message.
+    #    DEBUG=True re-raises unexpected exceptions for full traceback.
 
 # =============================================================================
 # OPEN INTERPRETER INTEGRATION NOTES
@@ -170,6 +179,7 @@ main.py -> exports:
 #       -> ollama_client.py       [COMPLETE]
 #           -> config.py          [COMPLETE]
 #       -> open-interpreter (external)
+#   -> ollama_client.py           [COMPLETE] (startup only)
 
 # =============================================================================
 # FILE STATUS SUMMARY
@@ -179,4 +189,5 @@ main.py -> exports:
 # ollama_client.py   — Complete (2026-03-01 18:39 EST)
 # vision.py          — Complete (2026-03-01 18:45 EST)
 # agent_loop.py      — Complete (2026-03-01 18:54 EST)
-# main.py            — Empty shell
+# main.py            — Complete (2026-03-01 18:59 EST)
+# ALL FILES COMPLETE
