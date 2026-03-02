@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-01 18:59 EST
+# Last updated: 2026-03-01 19:21 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -14,12 +14,14 @@
 # =============================================================================
 
 config.py -> exports (variables):
-  MODEL_NAME       : str   # e.g. "qwen2.5-coder:7b"
-  OLLAMA_URL       : str   # e.g. "http://localhost:11434"
-  SCREEN_REGION    : dict  # e.g. {"top": 0, "left": 0, "width": 1920, "height": 1080}
-  LOOP_DELAY       : float # seconds between agent loop ticks
-  MAX_RETRIES      : int   # max retries on model query failure
-  DEBUG            : bool  # enable verbose logging
+  MODEL_NAME         : str   # e.g. "qwen2.5-coder:7b"
+  OLLAMA_URL         : str   # e.g. "http://localhost:11434"
+  SCREEN_REGION      : dict  # e.g. {"top": 0, "left": 0, "width": 1920, "height": 1080}
+  LOOP_DELAY         : float # seconds between agent loop ticks
+  MAX_RETRIES        : int   # max retries on model query failure
+  DEBUG              : bool  # enable verbose logging
+  BLOCK_CPU_COMPUTE  : bool  # block CPU from performing GPU calculations (True = GPU-only)
+  OLLAMA_NUM_GPU     : int   # number of GPU layers (999 = unlimited, enables RAM offload)
 
 # =============================================================================
 # screen_capture.py
@@ -97,11 +99,12 @@ ollama_client.py -> exports:
 # =============================================================================
 # agent_loop.py
 # Role: Core autonomous goal loop. Orchestrates all components.
-# Imports from: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG)
+# Imports from: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU)
 #               vision.py (get_screen_state)
 #               ollama_client.py (check_ollama_running, query_model)
 #               open-interpreter (interpreter)
 #               time (stdlib)
+#               os (stdlib)
 # Status: Complete
 # FRAGILE: interpreter is configured at module load — do NOT re-configure in main.py or elsewhere.
 #          run() resets interpreter.messages = [] at start — each goal gets a clean session.
@@ -109,6 +112,9 @@ ollama_client.py -> exports:
 #          _running is module-level state shared between run() and stop() — do not make it local.
 #          auto_run=True means OI executes code without confirmation. Intentional for autonomy.
 #          offline=True prevents cloud fallback. Do not remove.
+#          CUDA environment variables set at module load BEFORE interpreter init — do not reorder.
+#          CUDA_VISIBLE_DEVICES=0 hardcoded to GPU 0 (RTX 4070) — multi-GPU needs adjustment.
+#          num_gpu=999 is intentional — signals unlimited GPU layers with RAM offload.
 # =============================================================================
 
 agent_loop.py -> exports:
@@ -162,10 +168,12 @@ main.py -> exports:
 #   interpreter.llm.api_base = "http://localhost:11434"
 #   interpreter.auto_run = True
 #   interpreter.offline = True
+#   interpreter.llm.num_gpu = 999  # Force GPU-only with RAM offload
 #   interpreter.chat("your goal here", display=False, stream=False)
 #
 # The interpreter object is instantiated ONCE in agent_loop.py and reused.
 # Do not instantiate it in main.py or any other file.
+# CUDA environment variables are set BEFORE interpreter initialization to block CPU compute.
 
 # =============================================================================
 # DEPENDENCY CHAIN SUMMARY
@@ -184,10 +192,10 @@ main.py -> exports:
 # =============================================================================
 # FILE STATUS SUMMARY
 # =============================================================================
-# config.py          — Complete (2026-03-01 15:51 EST)
+# config.py          — Complete (2026-03-01 19:20 EST) — added GPU/RAM config
 # screen_capture.py  — Complete (2026-03-01 18:32 EST)
 # ollama_client.py   — Complete (2026-03-01 18:39 EST)
-# vision.py          — Complete (2026-03-01 18:45 EST)
-# agent_loop.py      — Complete (2026-03-01 18:54 EST)
+# vision.py          — Complete (2026-03-01 18:45 EST) — EasyOCR gpu=True
+# agent_loop.py      — Complete (2026-03-01 19:21 EST) — GPU-only + RAM offload enforced
 # main.py            — Complete (2026-03-01 18:59 EST)
 # ALL FILES COMPLETE

@@ -8,18 +8,19 @@
 ## CURRENT STATE (always reflects latest entry)
 
 - **Agent Framework:** Open Interpreter (via Ollama backend)
-- **Primary Model:** qwen2.5-coder:7b (Q4_K_M) via Ollama | ~4.3GB VRAM | real-world safe
+- **Primary Model:** qwen2.5-coder:7b (Q4_K_M) via Ollama | GPU-only with RAM offloading
 - **Fallback Model:** deepseek-r1:8b (Q4_K_M) for heavy reasoning tasks
+- **Memory Strategy:** GPU-only compute, RAM weight offloading enabled, CPU compute blocked
 - **OS:** Windows 10 (build 10.0.26200) — hostname: FizzBeast
 - **Python:** 3.11.9 at C:/Files311/
 - **Project Root (local):** D:/AgentDesktopTest
 - **GitHub:** https://github.com/Fizzolas/AgentDesktopTest (public)
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
-- **config.py:** Complete — all 6 constants populated (2026-03-01 15:51 EST)
+- **config.py:** Complete — 8 constants (added BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU) (2026-03-01 19:20 EST)
 - **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
 - **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented (2026-03-01 18:39 EST)
-- **vision.py:** Complete — analyze_frame(), get_screen_state() implemented (2026-03-01 18:45 EST)
-- **agent_loop.py:** Complete — run(), step(), stop() implemented (2026-03-01 18:54 EST)
+- **vision.py:** Complete — analyze_frame(), get_screen_state() implemented, EasyOCR gpu=True (2026-03-01 18:45 EST)
+- **agent_loop.py:** Complete — run(), step(), stop() implemented, GPU-only + RAM offload enforced (2026-03-01 19:21 EST)
 - **main.py:** Complete — main() implemented (2026-03-01 18:59 EST)
 - **Remaining empty shells:** NONE — all files complete
 
@@ -35,18 +36,20 @@
 | iGPU | Intel UHD (2GB, not used for inference) |
 | Storage C: | 926GB NVMe WD SN560 (748GB used, 178GB free) |
 | Storage D: | 476GB NVMe Kingston (296GB used, 180GB free) |
-| VRAM budget | ~6GB safe max for LLM (leave 2GB headroom) |
+| VRAM budget | No hard limit — RAM offloading enabled for oversized models |
 
 ---
 
 ## MODEL SELECTION RATIONALE
 
-- RTX 4070 Laptop = 8GB VRAM. Safe model size limit: ~6GB loaded weight.
-- Qwen3-Coder:8b at Q4_K_M = ~5.0GB VRAM. Fits cleanly with headroom.
+- RTX 4070 Laptop = 8GB VRAM with 32GB RAM available for offloading.
+- GPU-only compute enforced — CPU is blocked from performing ANY GPU calculations.
+- Ollama configured with num_gpu=999 to force all layers to GPU with automatic RAM offload.
+- CUDA environment variables block CPU fallback: CUDA_LAUNCH_BLOCKING=1, CUDA_VISIBLE_DEVICES=0.
+- EasyOCR runs on GPU (gpu=True) for vision pipeline.
+- Models larger than VRAM will use RAM offloading without falling back to CPU compute.
 - Purpose-built for agentic + coding tasks. Long context window (128k).
 - Open Interpreter's tool-calling loop benefits from models trained on code execution.
-- DeepSeek-R1:8b kept as fallback for complex reasoning/debugging sessions.
-- Do NOT load 14b+ models — they will exceed VRAM and spill to RAM, causing severe slowdown.
 
 ---
 
@@ -55,11 +58,11 @@
 | File | Purpose | Status |
 |---|---|---|
 | main.py | Entry point. Initializes config, starts agent via Open Interpreter | **Complete** |
-| agent_loop.py | Core goal loop wrapping Open Interpreter session | **Complete** |
+| agent_loop.py | Core goal loop wrapping Open Interpreter session, GPU-only enforcement | **Complete** |
 | vision.py | Vision pipeline. Screen frame analysis, returns structured data | **Complete** |
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
 | ollama_client.py | Ollama API interface. query_model(), load_model(), check_ollama_running() | **Complete** |
-| config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG | **Complete** |
+| config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU | **Complete** |
 | PROJECT_CONTEXT.md | This file. Paste at session start | Active/Living |
 | CONTRACTS.txt | Function contracts. Paste at session start | Complete |
 | README.md | GitHub readme | Default |
@@ -75,11 +78,12 @@ main.py
            ollama_client.py (check_ollama_running, load_model) [startup only]
 
 agent_loop.py
-  imports: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG)
+  imports: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU)
            vision.py (get_screen_state)
            ollama_client.py (check_ollama_running, query_model)
            open-interpreter (interpreter object)
            time (stdlib)
+           os (stdlib)
 
 vision.py
   imports: screen_capture.py, cv2, easyocr, numpy
@@ -99,12 +103,16 @@ config.py
 ## KNOWN FRAGILE AREAS
 
 - config.py variable names are imported by ollama_client.py AND agent_loop.py AND main.py. Rename = triple break.
+- config.py BLOCK_CPU_COMPUTE and OLLAMA_NUM_GPU control critical GPU/RAM behavior. Do not modify without understanding implications.
+- agent_loop.py sets CUDA environment variables at module load. These MUST execute before interpreter initialization.
+- CUDA_VISIBLE_DEVICES=0 hardcoded to RTX 4070 (GPU 0). Multi-GPU systems need adjustment.
+- OLLAMA_NUM_GPU=999 is intentional — signals unlimited GPU layers with RAM offload fallback.
 - screen_capture.py MUST return np.ndarray BGR (3-channel, uint8). vision.py depends on this type. Do not swap to PIL.Image or return BGRA.
 - mss returns BGRA by default — the [:, :, :3] alpha strip in capture_screen() is intentional. Do not remove it.
 - ollama_client.query_model() uses /api/chat with stream:False. Do NOT switch to /api/generate or enable streaming — return type must stay str.
 - ollama_client.load_model() uses /api/generate with empty prompt + keep_alive. This is the correct Ollama warm-up pattern. Do not change the endpoint.
 - query_model() calls check_ollama_running() at entry. Do not remove this guard — it is what raises ConnectionError per contract.
-- vision._reader is initialized ONCE at module load (easyocr.Reader). Do NOT move it inside analyze_frame() — it would re-init the GPU model on every call.
+- vision._reader is initialized ONCE at module load (easyocr.Reader with gpu=True). Do NOT move it inside analyze_frame() — it would re-init the GPU model on every call.
 - vision.analyze_frame() expects BGR np.ndarray input. Passing BGRA or PIL.Image will break the cv2 and EasyOCR pipeline.
 - vision return dict keys are exactly: "description", "elements", "text". agent_loop.py keys into these by name. Do not rename.
 - agent_loop interpreter is configured at module load. Do NOT re-configure in main.py or any other file.
@@ -214,3 +222,13 @@ config.py
 - KNOWN FRAGILE updated: config.py rename now triple-break; main.py/ollama_client boundary noted
 - All file statuses updated to Complete
 - Files affected: main.py, PROJECT_CONTEXT.md, CONTRACTS.txt
+
+### [2026-03-01 19:21 EST] — GPU-Only Compute + RAM Offloading Enforced
+- config.py: Added BLOCK_CPU_COMPUTE=True and OLLAMA_NUM_GPU=999
+- agent_loop.py: Set CUDA environment variables to block CPU compute fallback
+- CUDA_LAUNCH_BLOCKING=1, CUDA_VISIBLE_DEVICES=0, OMP_NUM_THREADS=1, MKL_NUM_THREADS=1
+- interpreter.llm.num_gpu=999 forces all layers to GPU with RAM offload if VRAM insufficient
+- EasyOCR remains gpu=True in vision.py
+- VRAM budget removed — RAM offloading handles oversized models
+- Memory strategy: GPU-only inference, RAM weight offloading, zero CPU compute
+- Files affected: config.py, agent_loop.py, PROJECT_CONTEXT.md, CONTRACTS.txt
