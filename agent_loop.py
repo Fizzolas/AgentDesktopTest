@@ -7,6 +7,7 @@
 # NOTE: This is the ONLY file that calls vision.py and ollama_client.py directly.
 # NOTE: interpreter object is instantiated ONCE here and reused for the session.
 
+import os
 import time
 
 from interpreter import interpreter
@@ -16,9 +17,25 @@ from config import (
     OLLAMA_URL,
     LOOP_DELAY,
     DEBUG,
+    BLOCK_CPU_COMPUTE,
+    OLLAMA_NUM_GPU,
 )
 from vision import get_screen_state
 from ollama_client import check_ollama_running, query_model
+
+# =============================================================================
+# Block CPU from performing ANY GPU compute operations
+# =============================================================================
+if BLOCK_CPU_COMPUTE:
+    # CUDA environment variables to block CPU fallback
+    os.environ["CUDA_LAUNCH_BLOCKING"] = "1"        # Force synchronous GPU ops (no CPU async)
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Explicit GPU device order
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"        # Only expose GPU 0 (RTX 4070)
+    # PyTorch/TensorFlow CPU fallback blockers
+    os.environ["OMP_NUM_THREADS"] = "1"             # Limit CPU threading for compute
+    os.environ["MKL_NUM_THREADS"] = "1"             # Limit Intel MKL CPU threads
+    if DEBUG:
+        print("[agent_loop] CPU compute blocked. GPU-only mode enforced.")
 
 # =============================================================================
 # Open Interpreter — configured once at module load
@@ -28,6 +45,12 @@ interpreter.llm.api_base = OLLAMA_URL
 interpreter.auto_run = True          # execute code blocks without asking
 interpreter.verbose = DEBUG          # mirror DEBUG flag for OI internal logging
 interpreter.offline = True           # never phone home — local only
+
+# Force all model layers to GPU; Ollama will offload to RAM if VRAM insufficient
+interpreter.llm.num_gpu = OLLAMA_NUM_GPU  # 999 = unlimited GPU layers, RAM offload enabled
+
+if DEBUG:
+    print(f"[agent_loop] Ollama config: num_gpu={OLLAMA_NUM_GPU} (RAM offload enabled if needed)")
 
 # Internal state
 _running = False
