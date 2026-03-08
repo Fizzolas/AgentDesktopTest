@@ -40,8 +40,8 @@ try:
     from interpreter import interpreter
 except Exception as e:
     raise RuntimeError(
-        "Open Interpreter is required for the current runtime path. "
-        "Enable auto-install or install open-interpreter manually."
+        "Open Interpreter import failed inside the prepared virtual environment. "
+        f"Underlying error: {e}"
     ) from e
 
 if BLOCK_CPU_COMPUTE:
@@ -478,7 +478,8 @@ def run(goal: str) -> None:
 
     _dependency_status = ensure_runtime_dependencies()
     if not _dependency_status.get("providers", {}).get("open_interpreter", {}).get("installed"):
-        raise RuntimeError("Open Interpreter is not installed or could not be auto-installed.")
+        error = _dependency_status.get("providers", {}).get("open_interpreter", {}).get("error", "unknown import failure")
+        raise RuntimeError(f"Open Interpreter is not usable in this environment: {error}")
 
     if not _model_adapter.is_available():
         raise ConnectionError("Ollama is not reachable. Start Ollama before calling agent_loop.run().")

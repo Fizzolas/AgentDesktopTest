@@ -210,7 +210,10 @@ def _ensure_venv_packages() -> None:
         return
 
     _run_command([sys.executable, "-m", "ensurepip", "--upgrade"], "Ensuring pip inside project virtual environment")
-    _run_command([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], "Updating base packaging tools")
+    _run_command(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools>=68,<81"],
+        "Updating base packaging tools",
+    )
 
     if REQUIREMENTS_FILE.exists():
         _run_command([sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE)], "Installing project requirements into the virtual environment")

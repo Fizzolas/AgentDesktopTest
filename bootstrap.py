@@ -65,6 +65,7 @@ CORE_DEPENDENCIES = {
     "mss": DependencyStatus(module_name="mss", pip_package="mss>=9,<11", installed=False),
     "cv2": DependencyStatus(module_name="cv2", pip_package="opencv-python>=4.10,<5", installed=False),
     "easyocr": DependencyStatus(module_name="easyocr", pip_package="easyocr>=1.7,<2", installed=False),
+    "pkg_resources": DependencyStatus(module_name="pkg_resources", pip_package="setuptools>=68,<81", installed=False),
 }
 
 
@@ -74,6 +75,22 @@ def _module_installed(module_name: str) -> bool:
         return importlib.util.find_spec(module_name) is not None
     except Exception:
         return False
+
+
+
+def _module_importable(module_name: str) -> tuple[bool, str]:
+    try:
+        __import__(module_name)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+
+def _dependency_available(module_name: str) -> tuple[bool, str]:
+    if module_name == "pkg_resources":
+        return _module_importable(module_name)
+    return _module_installed(module_name), ""
 
 
 
@@ -137,24 +154,56 @@ def _repair_requests_stack_if_needed() -> tuple[bool, str]:
 
 
 
+def _probe_provider_import(provider_name: str, module_name: str) -> tuple[bool, str]:
+    if provider_name == "open_interpreter":
+        code = "from interpreter import interpreter"
+    else:
+        code = f"import importlib; importlib.import_module({module_name!r})"
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except Exception as e:
+        return False, str(e)
+
+    if result.returncode == 0:
+        return True, ""
+    return False, (result.stderr or result.stdout).strip()
+
+
+
+def _provider_ready(provider_name: str, module_name: str) -> tuple[bool, str]:
+    if not _module_installed(module_name):
+        return False, f"module `{module_name}` not found"
+    return _probe_provider_import(provider_name, module_name)
+
+
+
 def ensure_core_runtime_dependencies() -> dict:
     print(f"[bootstrap] Verifying core runtime dependencies in {_python_label()} ...", flush=True)
-    dependencies = {
-        name: DependencyStatus(
+    dependencies = {}
+    for name, status in CORE_DEPENDENCIES.items():
+        installed, error = _dependency_available(status.module_name)
+        dependencies[name] = DependencyStatus(
             module_name=status.module_name,
             pip_package=status.pip_package,
-            installed=_module_installed(status.module_name),
+            installed=installed,
+            error=error,
         )
-        for name, status in CORE_DEPENDENCIES.items()
-    }
 
     for dependency in dependencies.values():
         if dependency.installed:
             continue
         dependency.install_attempted = True
         dependency.install_succeeded, dependency.error = _install_package(dependency.pip_package)
-        dependency.installed = dependency.install_succeeded or _module_installed(dependency.module_name)
-        if dependency.install_succeeded and not dependency.error:
+        dependency.installed, availability_error = _dependency_available(dependency.module_name)
+        if not dependency.installed and availability_error:
+            dependency.error = availability_error
+        elif dependency.install_succeeded and not dependency.error:
             dependency.error = "installed during startup"
 
     repair_ok, repair_message = _repair_requests_stack_if_needed()
@@ -175,22 +224,27 @@ def ensure_runtime_dependencies() -> dict:
     settings = get_runtime_settings()
     auto_install_all = settings["AUTO_INSTALL_DEPENDENCIES"]
 
+    open_interpreter_installed, open_interpreter_error = _provider_ready("open_interpreter", "interpreter")
+    agents_installed, agents_error = _provider_ready("agents2_s3", settings["AGENTS2_S3_MODULE"])
+
     providers = {
         "open_interpreter": ProviderStatus(
             name="open_interpreter",
             enabled=settings["ENABLE_OPEN_INTERPRETER_TOOLS"],
             module_name="interpreter",
             pip_package="open-interpreter",
-            installed=_module_installed("interpreter"),
+            installed=open_interpreter_installed,
             auto_install=auto_install_all and settings["AUTO_INSTALL_OPEN_INTERPRETER"],
+            error=open_interpreter_error,
         ),
         "agents2_s3": ProviderStatus(
             name="agents2_s3",
             enabled=settings["ENABLE_AGENTS2_S3_TOOLS"],
             module_name=settings["AGENTS2_S3_MODULE"],
             pip_package=settings["AGENTS2_S3_PIP_PACKAGE"],
-            installed=_module_installed(settings["AGENTS2_S3_MODULE"]),
+            installed=agents_installed,
             auto_install=auto_install_all and settings["AUTO_INSTALL_AGENTS2_S3"],
+            error=agents_error,
         ),
     }
 
@@ -228,8 +282,10 @@ def ensure_runtime_dependencies() -> dict:
         if provider.enabled and not provider.installed and provider.auto_install:
             provider.install_attempted = True
             provider.install_succeeded, provider.error = _install_package(provider.pip_package)
-            provider.installed = provider.install_succeeded or _module_installed(provider.module_name)
-            if provider.install_succeeded and not provider.error:
+            provider.installed, import_error = _provider_ready(provider.name, provider.module_name)
+            if not provider.installed and import_error:
+                provider.error = import_error
+            elif provider.install_succeeded and not provider.error:
                 provider.error = "installed during startup"
 
     repair_ok, repair_message = _repair_requests_stack_if_needed()

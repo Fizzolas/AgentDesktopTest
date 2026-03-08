@@ -2,14 +2,14 @@
 
 ## CURRENT STATE
 - Branch: fix/runtime-baseline-01
-- Phase: screen-capture dependency closure pass complete
+- Phase: Open Interpreter importability + pkg_resources compatibility pass complete
 - GUI: main.py launches the Tk desktop GUI by default; shell_main.py is fallback if GUI import/launch fails
 - Python baseline: main.py targets Python 3.11 specifically, probes for it, rebuilds `.venv` with it when needed, and refuses to silently continue on an unsupported interpreter
 - Venv bootstrap: main.py auto-creates `.venv`, relaunches itself inside that environment, installs base requirements into it, verifies core runtime imports, and then runs provider bootstrap there
-- Base deps: requirements.txt now includes the app’s current screen-capture and vision stack, including numpy, mss, opencv-python, and easyocr
+- Base deps: requirements.txt now includes the app’s current screen-capture and vision stack plus a setuptools range that preserves pkg_resources compatibility for Open Interpreter
 - Failure visibility: startup prints captured stdout/stderr for install steps and pauses on startup failure so the console does not disappear before the error can be read
-- Core dependency verification: bootstrap now checks real import targets used by the app and auto-installs any missing packages before GUI import
-- Provider bootstrap: open-interpreter auto-install reports Python-version compatibility clearly, and the Agent-S-backed agents2_s3 provider defaults to repo-based installation from simular-ai/Agent-S
+- Core dependency verification: bootstrap checks real import targets used by the app and auto-installs any missing packages before GUI import
+- Provider bootstrap: provider readiness now verifies importability, not just package presence, so Open Interpreter is no longer marked ready when its import chain is broken
 - Requests compatibility: bootstrap repairs the requests stack when an incompatible chardet major version is introduced by downstream installs
 - Vision runtime: EasyOCR reader initialization is lazy and falls back to CPU mode if GPU initialization is unavailable or incompatible
 - Agent-S mapping: repo install target is `git+https://github.com/simular-ai/Agent-S.git` and the tracked import module is `gui_agents.s3`
@@ -23,6 +23,13 @@
 - Goal: real application behavior instead of a loose collection of scripts
 
 ## CHANGELOG
+### [2026-03-08 12:29 EST] — Open Interpreter Importability + pkg_resources Compatibility Pass
+- Added `setuptools>=68,<81` to requirements.txt so pkg_resources remains available for the current Open Interpreter import path
+- Updated main.py packaging-tool bootstrap to stop upgrading setuptools past the compatible range during environment preparation
+- Updated bootstrap.py core dependency verification to treat `pkg_resources` as a required runtime dependency and repair it automatically when missing
+- Updated bootstrap.py provider readiness checks so Open Interpreter and Agent-S must be importable, not merely present on disk, before startup reports them as ready
+- Updated agent_loop.py to surface the real Open Interpreter import failure instead of masking it behind a generic manual-install message
+
 ### [2026-03-08 12:26 EST] — Screen-Capture Dependency Closure Pass
 - Confirmed screen_capture.py imports both numpy and mss directly
 - Added `mss` to requirements.txt so base environment setup includes the real screen-capture dependency
