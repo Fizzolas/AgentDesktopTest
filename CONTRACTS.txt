@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 11:09 EST
+# Last updated: 2026-03-08 11:13 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -62,6 +62,34 @@ model_adapter.py -> exports:
   build_default_adapter() -> BaseModelAdapter
 
 # =============================================================================
+# runtime_controller.py
+# Role: Shared runtime control surface for shell/GUI layers.
+# Imports from: config.py, agent_loop.py, monitor.py, model_adapter.py
+# Status: Complete (Phase 7 baseline refactor: shared controller layer added)
+# NOTE: UI surfaces should call this file instead of duplicating startup, goal,
+#       run, status, and health logic.
+# =============================================================================
+
+runtime_controller.py -> exports:
+  RuntimeController : dataclass
+    methods:
+      get_banner_info() -> dict
+      startup() -> dict
+      set_goal(goal: str) -> str
+      clear_goal() -> None
+      has_goal() -> bool
+      run_goal(goal: str | None = None) -> dict
+      stop_runtime() -> None
+      get_runtime_snapshot() -> dict
+      get_dashboard_status() -> dict
+      get_full_status() -> dict
+      get_queue_snapshot() -> list[dict]
+      get_recent_notes() -> list[str]
+      get_last_result() -> dict
+
+  build_runtime_controller() -> RuntimeController
+
+# =============================================================================
 # screen_capture.py
 # Role: Raw screen grab utility. Base layer — no project imports.
 # Imports from: (none — uses mss, numpy only)
@@ -119,8 +147,9 @@ agent_loop.py -> exports:
 # =============================================================================
 # main.py
 # Role: Entry point and lightweight runtime shell for the desktop agent.
-# Imports from: config.py, agent_loop.py, model_adapter.py, sys (stdlib)
-# Status: Complete
+# Imports from: runtime_controller.py, sys (stdlib)
+# Status: Complete (Phase 7 baseline refactor: shell moved onto shared controller)
+# NOTE: Still transitional. Final polished GUI should consume runtime_controller.py too.
 # =============================================================================
 
 main.py -> exports:
@@ -132,33 +161,25 @@ main.py -> exports:
 # Role: System health monitor. Tracks Ollama status, memory usage, GPU stats, and agent runtime state.
 # Imports from: config.py, agent_loop.py (lazy import), psutil, requests, time,
 #               threading, os, sys, json, pathlib, datetime
-# Status: Complete (Phase 6 baseline refactor: runtime-aware monitoring + UI payload)
-# NOTE: monitor.py must stay safe in standalone mode; agent_loop is imported lazily
-#       only when a runtime snapshot is requested.
+# Status: Complete
 # =============================================================================
 
 monitor.py -> exports:
   start_monitoring() -> None
-    # Starts the background monitoring thread.
-
   stop_monitoring() -> None
-    # Stops the background monitoring thread.
-
   get_current_status() -> dict
-    # Returns full system + runtime status, including health flags and summary text.
-
   get_dashboard_status() -> dict
-    # Returns a compact UI-friendly status payload intended for future shell/GUI surfaces.
 
 # =============================================================================
 # FILE STATUS SUMMARY
 # =============================================================================
-# config.py          — Complete
-# runtime_models.py  — Complete (2026-03-08 10:07 EST) — shared typed runtime baseline added
-# model_adapter.py   — Complete (2026-03-08 10:32 EST) — backend adapter baseline added
-# screen_capture.py  — Complete
-# vision.py          — Complete (2026-03-08 11:00 EST) — typed ScreenState path added, legacy dict path preserved
-# ollama_client.py   — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
-# agent_loop.py      — Complete (2026-03-08 10:50 EST) — typed session and internal task queue scaffold added
-# main.py            — Complete (2026-03-08 11:06 EST) — runtime shell added, GUI deferred to later phase
-# monitor.py         — Complete (2026-03-08 11:09 EST) — runtime-aware monitoring and dashboard payload added
+# config.py            — Complete
+# runtime_models.py    — Complete (2026-03-08 10:07 EST) — shared typed runtime baseline added
+# model_adapter.py     — Complete (2026-03-08 10:32 EST) — backend adapter baseline added
+# runtime_controller.py— Complete (2026-03-08 11:13 EST) — shared shell/GUI controller layer added
+# screen_capture.py    — Complete
+# vision.py            — Complete (2026-03-08 11:00 EST) — typed ScreenState path added, legacy dict path preserved
+# ollama_client.py     — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
+# agent_loop.py        — Complete (2026-03-08 10:50 EST) — typed session and internal task queue scaffold added
+# main.py              — Complete (2026-03-08 11:13 EST) — shell now uses shared runtime controller
+# monitor.py           — Complete (2026-03-08 11:09 EST) — runtime-aware monitoring and dashboard payload added

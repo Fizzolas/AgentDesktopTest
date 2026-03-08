@@ -18,19 +18,20 @@
 - **GitHub:** https://github.com/Fizzolas/AgentDesktopTest (public)
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
 - **Current refactor branch:** fix/runtime-baseline-01
-- **Baseline refactor phase:** Phase 6 complete — monitor now sees typed runtime state and emits UI-friendly status
+- **Baseline refactor phase:** Phase 7 complete — shared runtime controller now sits between the shell and core runtime/monitor layers
 - **GUI roadmap note:** Defer GUI until after core file-session refactors; final GUI should be very clean and clearly better than the transitional CLI shell
 - **config.py:** Complete — 8 constants (added BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU) (2026-03-01 19:20 EST)
 - **runtime_models.py:** Complete — shared dataclasses/enums/helpers for queue-based runtime (2026-03-08 10:07 EST)
 - **model_adapter.py:** Complete — backend adapter boundary for model-agnostic runtime migration (2026-03-08 10:32 EST)
+- **runtime_controller.py:** Complete — shared control surface for startup, goal state, run, queue inspection, status, and health; intended for both shell and future GUI (2026-03-08 11:13 EST)
 - **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
 - **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented; typed query_model_reply() added (2026-03-08 10:32 EST)
 - **vision.py:** Complete — legacy dict path preserved; new typed analyze_frame_typed() and get_screen_state_typed() return ScreenState with ScreenElement metadata (2026-03-08 11:00 EST)
 - **agent_loop.py:** Complete — run(), step(), stop() still active; now also manages typed session state, queue seeding, and live session snapshots (2026-03-08 10:50 EST)
-- **main.py:** Complete — upgraded from one-shot prompt launcher to a lightweight runtime shell with commands for goal/run/status/queue/notes/last/clear/quit (2026-03-08 11:06 EST)
-- **monitor.py:** Complete — now includes runtime snapshot awareness, health flags, summary text, and get_dashboard_status() for future UI integration (2026-03-08 11:09 EST)
+- **main.py:** Complete — now a thinner runtime shell built on runtime_controller.py rather than containing the control logic itself (2026-03-08 11:13 EST)
+- **monitor.py:** Complete — includes runtime snapshot awareness, health flags, summary text, and get_dashboard_status() for future UI integration (2026-03-08 11:09 EST)
 - **Remaining empty shells:** NONE — all files complete
-- **Next migration target:** introduce a dedicated runtime controller/UI adapter layer so main.py and the eventual clean GUI share the same structured control/status surface
+- **Next migration target:** begin the final UX layer later by building a clean GUI on top of runtime_controller.py and monitor.get_dashboard_status(), rather than on top of the CLI shell
 
 ---
 
@@ -65,7 +66,8 @@
 
 | File | Purpose | Status |
 |---|---|---|
-| main.py | Runtime shell entry point with startup, command handling, and session inspection | **Complete** |
+| main.py | Thin runtime shell entry point built on the shared controller | **Complete** |
+| runtime_controller.py | Shared shell/GUI control surface for startup, goal state, run, queue, notes, and health | **Complete** |
 | agent_loop.py | Core goal loop with typed session state, internal queue scaffolding, and Open Interpreter execution | **Complete** |
 | runtime_models.py | Shared typed runtime layer for queue tasks, model replies, tool results, and session state | **Complete** |
 | model_adapter.py | Stable backend boundary for future multi-runtime model support | **Complete** |
@@ -89,10 +91,15 @@ runtime_models.py
 model_adapter.py
   imports: config.py, ollama_client.py, runtime_models.py
 
-main.py
+runtime_controller.py
   imports: config.py (DEBUG, MODEL_NAME, OLLAMA_URL)
            agent_loop.py
-           model_adapter.py (build_default_adapter)
+           monitor.py
+           model_adapter.py (BaseModelAdapter, build_default_adapter)
+           dataclasses (stdlib)
+
+main.py
+  imports: runtime_controller.py
            sys (stdlib)
 
 agent_loop.py
@@ -127,7 +134,7 @@ config.py
 
 ## KNOWN FRAGILE AREAS
 
-- config.py variable names are imported by ollama_client.py AND agent_loop.py AND main.py AND monitor.py. Rename = quadruple break.
+- config.py variable names are imported by ollama_client.py AND agent_loop.py AND main.py AND monitor.py AND runtime_controller.py. Rename = multi-file break.
 - config.py BLOCK_CPU_COMPUTE and OLLAMA_NUM_GPU control critical GPU/RAM behavior. Do not modify without understanding implications.
 - agent_loop.py sets CUDA environment variables at module load. These MUST execute before interpreter initialization.
 - CUDA_VISIBLE_DEVICES=0 hardcoded to RTX 4070 (GPU 0). Multi-GPU systems need adjustment.
@@ -142,7 +149,8 @@ config.py
 - agent_loop interpreter is configured at module load. Do NOT re-configure in main.py or any other file until bootstrap extraction is implemented.
 - GOAL_COMPLETE is still the completion signal string. The internal task queue now exists, but explicit task-state completion has not fully replaced this string yet.
 - agent_loop._active_session stores the live typed SessionState; get_session_snapshot() exposes a serializable debug view.
-- main.py is now a transitional runtime shell, not the final UX. Do not over-invest in CLI polish beyond what helps core debugging.
+- main.py is now a thin transitional shell. New UX logic should go into runtime_controller.py first, not directly into the shell.
+- runtime_controller.py is now the intended control boundary for both the shell and the future clean GUI.
 - Final GUI target should be significantly cleaner and more interactive than the transitional CLI shell.
 - monitor.py uses a lazy import for agent_loop runtime snapshots; keep it lazy so standalone monitoring does not force runtime bootstrap.
 - get_dashboard_status() is intended as a future shared surface for shell/GUI status widgets.
@@ -187,6 +195,14 @@ config.py
 ---
 
 ## CHANGELOG
+
+### [2026-03-08 11:13 EST] — Baseline Refactor Phase 7: Shared Runtime Controller Added
+- Added new file runtime_controller.py as the shared control surface for shell and future GUI code
+- Moved startup, goal handling, runtime status access, queue access, note access, and last-result access behind RuntimeController
+- Refactored main.py into a thinner shell that delegates control logic to runtime_controller.py
+- Added a health command to the shell by reusing monitor.get_dashboard_status() through the controller layer
+- Preserved the deferred clean-GUI roadmap and established runtime_controller.py as the intended GUI integration boundary
+- Files affected: runtime_controller.py, main.py, PROJECT_CONTEXT.md, CONTRACTS.txt
 
 ### [2026-03-08 11:09 EST] — Baseline Refactor Phase 6: Runtime-Aware Monitoring Added
 - Refactored monitor.py to pull in typed runtime session snapshots through a lazy agent_loop import

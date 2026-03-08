@@ -1,10 +1,8 @@
 # main.py
 # Role: Entry point and lightweight runtime shell for the desktop agent.
-# Imports from: config.py, agent_loop.py, model_adapter.py, sys (stdlib)
+# Imports from: config.py, runtime_controller.py, sys (stdlib)
 # Contract: main() -> None
 #           print_runtime_snapshot(snapshot: dict) -> None
-# NOTE: Does NOT import vision.py directly.
-# NOTE: Does NOT configure the interpreter — that is agent_loop.py's responsibility.
 # NOTE: This CLI shell is an interim control surface only. A cleaner GUI should
 #       replace it after the core runtime refactor stabilizes.
 
@@ -12,9 +10,7 @@ from __future__ import annotations
 
 import sys
 
-from config import DEBUG, MODEL_NAME, OLLAMA_URL
-import agent_loop
-from model_adapter import build_default_adapter
+from runtime_controller import build_runtime_controller
 
 
 _COMMANDS = {
@@ -23,6 +19,7 @@ _COMMANDS = {
     "run": "Run the currently stored goal.",
     "run <text>": "Set a goal and run it immediately.",
     "status": "Show current session snapshot.",
+    "health": "Show compact dashboard health status.",
     "queue": "Show pending queue items from the current session.",
     "notes": "Show recent session notes.",
     "last": "Show the last action and latest screen summary.",
@@ -30,13 +27,17 @@ _COMMANDS = {
     "quit": "Exit the runtime shell.",
 }
 
+_controller = build_runtime_controller()
+
+
 
 def _print_banner() -> None:
+    info = _controller.get_banner_info()
     print("=" * 68)
     print(" AgentDesktopTest Runtime Shell")
-    print(f" Model   : {MODEL_NAME}")
-    print(f" Backend : {OLLAMA_URL}")
-    print(f" Debug   : {DEBUG}")
+    print(f" Model   : {info['model']}")
+    print(f" Backend : {info['backend']}")
+    print(f" Debug   : {info['debug']}")
     print(" GUI     : Planned later after runtime core stabilizes")
     print("=" * 68)
 
@@ -50,18 +51,19 @@ def _print_help() -> None:
 
 
 def _startup_check() -> None:
-    adapter = build_default_adapter()
     print("[main] Checking backend availability...")
-    if not adapter.is_available():
+    result = _controller.startup()
+    if not result["backend_reachable"]:
+        banner = _controller.get_banner_info()
         print(
-            f"[main] ERROR: Local model backend is not reachable at {OLLAMA_URL}.\n"
+            f"[main] ERROR: Local model backend is not reachable at {banner['backend']}.\n"
             f"       Start it first (example for Ollama: ollama serve)."
         )
         sys.exit(1)
     print("[main] Backend is live.")
 
-    print(f"[main] Loading model '{MODEL_NAME}'...")
-    if not adapter.warmup(MODEL_NAME):
+    print(f"[main] Loading model '{result['model_name']}'...")
+    if not result["warmup_ok"]:
         print(
             "[main] WARNING: Model warm-up failed. "
             "Proceeding anyway — first query may be slow."
@@ -89,8 +91,29 @@ def print_runtime_snapshot(snapshot: dict) -> None:
 
 
 
-def _print_queue(snapshot: dict) -> None:
-    pending = snapshot.get("pending_tasks", [])
+def _print_health() -> None:
+    status = _controller.get_dashboard_status()
+    print("[main] Health status")
+    print(f"  Summary           : {status.get('summary', '')}")
+    print(f"  Backend Reachable : {status.get('backend_reachable', False)}")
+    print(f"  Model Loaded      : {status.get('model_loaded', False)}")
+    print(f"  Runtime Running   : {status.get('runtime_running', False)}")
+    print(f"  Runtime Status    : {status.get('runtime_status', '')}")
+    print(f"  Pending Tasks     : {status.get('pending_task_count', 0)}")
+    print(f"  Completed Tasks   : {status.get('completed_task_count', 0)}")
+    print(f"  Failed Tasks      : {status.get('failed_task_count', 0)}")
+    print(f"  CPU %             : {status.get('cpu_percent')}")
+    print(f"  RAM %             : {status.get('ram_percent')}")
+    print(f"  GPU Util %        : {status.get('gpu_utilization_percent')}")
+    print(f"  GPU Temp C        : {status.get('gpu_temperature_c')}")
+    flags = status.get("health_flags", [])
+    if flags:
+        print(f"  Flags             : {', '.join(flags)}")
+
+
+
+def _print_queue() -> None:
+    pending = _controller.get_queue_snapshot()
     if not pending:
         print("[main] No pending queue items.")
         return
@@ -106,8 +129,8 @@ def _print_queue(snapshot: dict) -> None:
 
 
 
-def _print_notes(snapshot: dict) -> None:
-    notes = snapshot.get("notes", [])
+def _print_notes() -> None:
+    notes = _controller.get_recent_notes()
     if not notes:
         print("[main] No session notes available.")
         return
@@ -118,11 +141,11 @@ def _print_notes(snapshot: dict) -> None:
 
 
 
-def _print_last(snapshot: dict) -> None:
-    last_action = snapshot.get("last_action", "")
-    last_screen_state = snapshot.get("last_screen_state") or {}
+def _print_last() -> None:
+    result = _controller.get_last_result()
     print("[main] Last action")
-    print(f"  {last_action or '(none)'}")
+    print(f"  {result.get('last_action') or '(none)'}")
+    last_screen_state = result.get("last_screen_state") or {}
     if last_screen_state:
         print("[main] Last screen summary")
         print(f"  {last_screen_state.get('description', '(none)')}")
@@ -133,80 +156,88 @@ def _run_goal(goal: str) -> None:
     print(f"[main] Starting agent loop with goal: {goal!r}")
     print("       Press Ctrl+C at any time to stop.\n")
     try:
-        agent_loop.run(goal)
+        snapshot = _controller.run_goal(goal)
+    except ValueError as e:
+        print(f"[main] {e}")
+        return
     except ConnectionError as e:
         print(f"[main] Connection error: {e}")
+        return
     except Exception as e:
         print(f"[main] Unexpected error: {e}")
-        if DEBUG:
-            raise
+        raise
     else:
         print("[main] Agent loop finished.")
-
-    snapshot = agent_loop.get_session_snapshot()
-    print_runtime_snapshot(snapshot)
+        print_runtime_snapshot(snapshot)
 
 
 
-def _handle_command(command: str, current_goal: str) -> str | None:
+def _handle_command(command: str) -> bool:
     raw = command.strip()
     if not raw:
-        return current_goal
+        return True
 
     lower = raw.lower()
 
     if lower in {"help", "?"}:
         _print_help()
-        return current_goal
+        return True
 
     if lower == "quit":
-        return None
+        print("[main] Goodbye.")
+        return False
 
     if lower == "clear":
+        _controller.clear_goal()
         print("[main] Stored goal cleared.")
-        return ""
+        return True
 
     if lower == "status":
-        print_runtime_snapshot(agent_loop.get_session_snapshot())
-        return current_goal
+        print_runtime_snapshot(_controller.get_runtime_snapshot())
+        return True
+
+    if lower == "health":
+        _print_health()
+        return True
 
     if lower == "queue":
-        _print_queue(agent_loop.get_session_snapshot())
-        return current_goal
+        _print_queue()
+        return True
 
     if lower == "notes":
-        _print_notes(agent_loop.get_session_snapshot())
-        return current_goal
+        _print_notes()
+        return True
 
     if lower == "last":
-        _print_last(agent_loop.get_session_snapshot())
-        return current_goal
+        _print_last()
+        return True
 
     if raw.startswith("goal "):
-        updated_goal = raw[5:].strip()
+        updated_goal = _controller.set_goal(raw[5:])
         if not updated_goal:
             print("[main] Goal text cannot be empty.")
-            return current_goal
+            return True
         print(f"[main] Stored goal updated: {updated_goal!r}")
-        return updated_goal
+        return True
 
     if raw == "run":
-        if not current_goal:
+        if not _controller.has_goal():
             print("[main] No stored goal. Use: goal <text> or run <text>")
-            return current_goal
-        _run_goal(current_goal)
-        return current_goal
+            return True
+        _run_goal(_controller.current_goal)
+        return True
 
     if raw.startswith("run "):
-        updated_goal = raw[4:].strip()
-        if not updated_goal:
+        goal = raw[4:].strip()
+        if not goal:
             print("[main] Goal text cannot be empty.")
-            return current_goal
-        _run_goal(updated_goal)
-        return updated_goal
+            return True
+        _controller.set_goal(goal)
+        _run_goal(goal)
+        return True
 
     print("[main] Unknown command. Type 'help' for available commands.")
-    return current_goal
+    return True
 
 
 
@@ -221,24 +252,20 @@ def main() -> None:
     _print_help()
     print()
 
-    current_goal = ""
     try:
         while True:
-            prompt = "agent> " if not current_goal else f"agent[{current_goal[:24]}]> "
+            prompt_goal = _controller.current_goal[:24]
+            prompt = "agent> " if not prompt_goal else f"agent[{prompt_goal}]> "
             try:
                 command = input(prompt)
             except (KeyboardInterrupt, EOFError):
                 print("\n[main] Exiting runtime shell.")
                 break
 
-            result = _handle_command(command, current_goal)
-            if result is None:
-                print("[main] Goodbye.")
+            if not _handle_command(command):
                 break
-            current_goal = result
     finally:
-        if agent_loop.get_session_snapshot().get("running"):
-            agent_loop.stop()
+        _controller.stop_runtime()
 
 
 if __name__ == "__main__":
