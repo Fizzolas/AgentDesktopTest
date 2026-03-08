@@ -2,13 +2,14 @@
 
 ## CURRENT STATE
 - Branch: fix/runtime-baseline-01
-- Phase: Python 3.11 baseline + missing numpy + provider install guard pass complete
+- Phase: Agent-S repo-backed provider install pass complete
 - GUI: main.py launches the Tk desktop GUI by default; shell_main.py is fallback if GUI import/launch fails
-- Python baseline: main.py now targets Python 3.11 specifically, probes for it, rebuilds `.venv` with it when needed, and refuses to silently continue on an unsupported interpreter
+- Python baseline: main.py targets Python 3.11 specifically, probes for it, rebuilds `.venv` with it when needed, and refuses to silently continue on an unsupported interpreter
 - Venv bootstrap: main.py auto-creates `.venv`, relaunches itself inside that environment, installs base requirements into it, and then runs provider bootstrap there
 - Base deps: requirements.txt contains core app dependencies including numpy so vision.py can import on first startup
 - Failure visibility: startup prints captured stdout/stderr for install steps and pauses on startup failure so the console does not disappear before the error can be read
-- Provider bootstrap: open-interpreter auto-install now reports Python-version compatibility more clearly, and agents2-s3 auto-install now expects a real pip package name or git+ repository URL instead of the previous placeholder
+- Provider bootstrap: open-interpreter auto-install reports Python-version compatibility clearly, and the Agent-S-backed agents2_s3 provider now defaults to repo-based installation from simular-ai/Agent-S
+- Agent-S mapping: repo install target is `git+https://github.com/simular-ai/Agent-S.git` and the tracked import module is `gui_agents.s3`
 - Settings: persisted to agent_settings.json and applied immediately across runtime/model-facing modules
 - Startup: GUI boot initializes bootstrap checks, controller services, provider readiness, backend warmup, and monitor services automatically when enabled
 - Tool providers: both open_interpreter and agents2_s3 have persisted enable flags, auto-install flags, active-provider selection, and startup readiness checks
@@ -19,6 +20,13 @@
 - Goal: real application behavior instead of a loose collection of scripts
 
 ## CHANGELOG
+### [2026-03-08 12:09 EST] — Agent-S Repo-Backed Provider Install Pass
+- Confirmed the simular-ai/Agent-S repository contains a Python setup.py package definition with package name `gui-agents`
+- Confirmed the repository exposes an Agent-S console entry point through `gui_agents.s3.cli_app:main`
+- Updated config.py so the agents2_s3 provider now defaults to `git+https://github.com/simular-ai/Agent-S.git` and normalizes legacy placeholder values to that repo-backed install target
+- Updated config.py so the tracked module for Agent-S readiness is now `gui_agents.s3`
+- Kept bootstrap.py repo-install compatible so startup auto-install can install directly from the Agent-S GitHub repository inside the project venv
+
 ### [2026-03-08 12:04 EST] — Python 3.11 Baseline + Missing Numpy + Provider Install Guard Pass
 - Updated main.py to require Python 3.11, probe for a usable 3.11 interpreter, rebuild `.venv` with it when necessary, and relaunch into that runtime
 - Added numpy to requirements.txt so vision.py imports successfully during first-run startup

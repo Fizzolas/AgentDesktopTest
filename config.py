@@ -7,6 +7,8 @@ from copy import deepcopy
 from pathlib import Path
 
 SETTINGS_FILE = Path("agent_settings.json")
+AGENT_S_REPO_INSTALL = "git+https://github.com/simular-ai/Agent-S.git"
+AGENT_S_MODULE = "gui_agents.s3"
 
 DEFAULT_SETTINGS = {
     "MODEL_NAME": "qwen2.5-coder:7b",
@@ -25,11 +27,12 @@ DEFAULT_SETTINGS = {
     "ENABLE_OPEN_INTERPRETER_TOOLS": True,
     "ENABLE_AGENTS2_S3_TOOLS": True,
     "ACTIVE_TOOL_PROVIDER": "open_interpreter",
-    "AGENTS2_S3_PIP_PACKAGE": "",
-    "AGENTS2_S3_MODULE": "agents2_s3",
+    "AGENTS2_S3_PIP_PACKAGE": AGENT_S_REPO_INSTALL,
+    "AGENTS2_S3_MODULE": AGENT_S_MODULE,
     "AUTO_TOOL_SELECTION": True,
     "ADAPTIVE_VISION": True,
 }
+
 
 
 def _normalize_screen_region(value: dict | None) -> dict:
@@ -77,10 +80,14 @@ def _normalize_settings(raw: dict | None) -> dict:
     data["ACTIVE_TOOL_PROVIDER"] = provider if provider in {"open_interpreter", "agents2_s3"} else DEFAULT_SETTINGS["ACTIVE_TOOL_PROVIDER"]
 
     agents_package = str(data["AGENTS2_S3_PIP_PACKAGE"] or DEFAULT_SETTINGS["AGENTS2_S3_PIP_PACKAGE"]).strip()
-    if agents_package == "agents2-s3":
-        agents_package = ""
+    if agents_package in {"", "agents2-s3", "Agent-S", "agent-s"}:
+        agents_package = AGENT_S_REPO_INSTALL
     data["AGENTS2_S3_PIP_PACKAGE"] = agents_package
-    data["AGENTS2_S3_MODULE"] = str(data["AGENTS2_S3_MODULE"] or DEFAULT_SETTINGS["AGENTS2_S3_MODULE"]).strip() or DEFAULT_SETTINGS["AGENTS2_S3_MODULE"]
+
+    agents_module = str(data["AGENTS2_S3_MODULE"] or DEFAULT_SETTINGS["AGENTS2_S3_MODULE"]).strip()
+    if agents_module in {"", "agents2_s3", "agent_s"}:
+        agents_module = AGENT_S_MODULE
+    data["AGENTS2_S3_MODULE"] = agents_module
     return data
 
 

@@ -70,7 +70,7 @@ def _install_package(package_name: str) -> tuple[bool, str]:
             [sys.executable, "-m", "pip", "install", package_name],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=900,
         )
         if result.returncode == 0:
             print(f"[bootstrap] Installed {package_name} successfully.", flush=True)
