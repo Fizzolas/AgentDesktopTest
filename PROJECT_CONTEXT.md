@@ -7,7 +7,7 @@
 
 ## CURRENT STATE (always reflects latest entry)
 
-- **Agent Framework:** Open Interpreter (via Ollama backend)
+- **Agent Framework:** Open Interpreter (via Ollama backend) — legacy runtime still active
 - **Primary Model:** qwen2.5-coder:7b (Q4_K_M) via Ollama | GPU-only with RAM offloading
 - **Fallback Model:** deepseek-r1:8b (Q4_K_M) for heavy reasoning tasks
 - **Memory Strategy:** GPU-only compute, RAM weight offloading enabled, CPU compute blocked
@@ -17,7 +17,10 @@
 - **Project Root (local):** D:/AgentDesktopTest
 - **GitHub:** https://github.com/Fizzolas/AgentDesktopTest (public)
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
+- **Current refactor branch:** fix/runtime-baseline-01
+- **Baseline refactor phase:** Phase 1 complete — shared typed runtime models added, active runtime unchanged
 - **config.py:** Complete — 8 constants (added BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU) (2026-03-01 19:20 EST)
+- **runtime_models.py:** Complete — shared dataclasses/enums/helpers for queue-based runtime (2026-03-08 10:07 EST)
 - **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
 - **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented (2026-03-01 18:39 EST)
 - **vision.py:** Complete — analyze_frame(), get_screen_state() implemented, EasyOCR gpu=True (2026-03-01 18:45 EST)
@@ -25,6 +28,7 @@
 - **main.py:** Complete — main() implemented (2026-03-01 18:59 EST)
 - **monitor.py:** Complete — system health monitoring with rolling log (2026-03-01 19:29 EST)
 - **Remaining empty shells:** NONE — all files complete
+- **Next migration target:** backend/runtime decoupling so queue types can become live state
 
 ---
 
@@ -61,6 +65,7 @@
 |---|---|---|
 | main.py | Entry point. Initializes config, starts agent via Open Interpreter | **Complete** |
 | agent_loop.py | Core goal loop wrapping Open Interpreter session, GPU-only enforcement | **Complete** |
+| runtime_models.py | Shared typed runtime layer for queue tasks, model replies, tool results, and session state | **Complete** |
 | vision.py | Vision pipeline. Screen frame analysis, returns structured data | **Complete** |
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
 | ollama_client.py | Ollama API interface. query_model(), load_model(), check_ollama_running() | **Complete** |
@@ -75,6 +80,9 @@
 ## DEPENDENCY GRAPH
 
 ```
+runtime_models.py
+  imports: dataclasses, enum, time, uuid, typing (stdlib only)
+
 main.py
   imports: config.py (DEBUG, MODEL_NAME, OLLAMA_URL)
            agent_loop.py (run)
@@ -116,20 +124,22 @@ config.py
 - OLLAMA_NUM_GPU=999 is intentional — signals unlimited GPU layers with RAM offload fallback.
 - screen_capture.py MUST return np.ndarray BGR (3-channel, uint8). vision.py depends on this type. Do not swap to PIL.Image or return BGRA.
 - mss returns BGRA by default — the [:, :, :3] alpha strip in capture_screen() is intentional. Do not remove it.
-- ollama_client.query_model() uses /api/chat with stream:False. Do NOT switch to /api/generate or enable streaming — return type must stay str.
+- ollama_client.query_model() uses /api/chat with stream:False. Do NOT switch to /api/generate or enable streaming — return type must stay str until backend migration is done.
 - ollama_client.load_model() uses /api/generate with empty prompt + keep_alive. This is the correct Ollama warm-up pattern. Do not change the endpoint.
 - query_model() calls check_ollama_running() at entry. Do not remove this guard — it is what raises ConnectionError per contract.
 - vision._reader is initialized ONCE at module load (easyocr.Reader with gpu=True). Do NOT move it inside analyze_frame() — it would re-init the GPU model on every call.
 - vision.analyze_frame() expects BGR np.ndarray input. Passing BGRA or PIL.Image will break the cv2 and EasyOCR pipeline.
-- vision return dict keys are exactly: "description", "elements", "text". agent_loop.py keys into these by name. Do not rename.
-- agent_loop interpreter is configured at module load. Do NOT re-configure in main.py or any other file.
+- vision return dict keys are exactly: "description", "elements", "text". agent_loop.py keys into these by name. Do not rename until the full migration from legacy dict state to ScreenState is done.
+- agent_loop interpreter is configured at module load. Do NOT re-configure in main.py or any other file until bootstrap extraction is implemented.
 - agent_loop.run() resets interpreter.messages = [] at start of every call — each goal gets a clean session.
-- GOAL_COMPLETE is the completion signal string. run() checks "GOAL_COMPLETE" in action. Do not change this string.
+- GOAL_COMPLETE is the completion signal string. run() checks "GOAL_COMPLETE" in action. Do not change this string until the queued task-state system replaces it.
 - agent_loop._running is module-level state. stop() sets it False; run() reads it. Do not make it local.
 - agent_loop.py is the ONLY file that calls vision.py. Not main.py.
 - main.py calls ollama_client only for startup check and model warm-up. All runtime calls go through agent_loop.
 - monitor.py runs in a daemon thread. It does NOT block main execution. Can be run standalone: python monitor.py
 - monitor.log auto-rotates at 10MB. Old log becomes monitor.log.old (single backup only).
+- runtime_models.py is now the shared baseline for future queue migration. Existing files do not import it yet by design.
+- Legacy dict-based state and plain-string model outputs remain active until future phases convert callers one layer at a time.
 - Do not add pip packages without logging them below in the active Dependencies section.
 
 ---
@@ -169,6 +179,18 @@ config.py
 ---
 
 ## CHANGELOG
+
+### [2026-03-08 10:07 EST] — Baseline Refactor Phase 1: Shared Runtime Types Added
+- Created new file: runtime_models.py
+- Added shared enums for task lifecycle, task priority, and task kind
+- Added dataclasses for ScreenElement, ScreenState, ToolCall, ToolResult, ModelReply, AgentTask, and SessionState
+- Added create_task() helper for future queue-based runtime
+- Added legacy compatibility helpers so dict-based vision/model state can be migrated gradually without breaking the working prototype
+- Updated CONTRACTS.txt to document runtime_models.py as the new shared baseline layer
+- No active runtime behavior changed in this phase
+- No existing imports were changed in this phase
+- Purpose: establish a safe typed foundation for the upcoming backend adapter, task queue, and planner/executor split
+- Files affected: runtime_models.py, PROJECT_CONTEXT.md, CONTRACTS.txt
 
 ### [2026-03-01 15:16 EST] — Initial Setup
 - Created GitHub repo: Fizzolas/AgentDesktopTest (public)

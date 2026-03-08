@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-01 19:21 EST
+# Last updated: 2026-03-08 10:07 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -22,6 +22,144 @@ config.py -> exports (variables):
   DEBUG              : bool  # enable verbose logging
   BLOCK_CPU_COMPUTE  : bool  # block CPU from performing GPU calculations (True = GPU-only)
   OLLAMA_NUM_GPU     : int   # number of GPU layers (999 = unlimited, enables RAM offload)
+
+# =============================================================================
+# runtime_models.py
+# Role: Shared typed runtime layer for the queue-based refactor.
+# Imports from: dataclasses, enum, time, uuid, typing (stdlib only)
+# Status: Complete (baseline types added before runtime migration)
+# NOTE: This file is dependency-light by design so it can become the shared
+#       import base for agent_loop.py, vision.py, tool wrappers, and future
+#       scheduler/planner modules without creating import cycles.
+# =============================================================================
+
+runtime_models.py -> exports:
+  TaskStatus        : Enum[str]
+    # String enum for task lifecycle states:
+    # pending, running, waiting, blocked, done, failed, cancelled
+
+  TaskPriority      : Enum[int]
+    # Int enum for task ordering:
+    # low=10, normal=50, high=90, critical=100
+
+  TaskKind          : Enum[str]
+    # String enum describing queue task category:
+    # plan, observe, think, tool, verify, respond, complete
+
+  ScreenElement     : dataclass
+    fields:
+      type         : str
+      bbox         : list[int]
+      text         : str
+      confidence   : float
+      element_id   : str
+      source       : str
+      metadata     : dict
+    methods:
+      from_legacy(data: dict) -> ScreenElement
+      to_legacy() -> dict
+
+  ScreenState       : dataclass
+    fields:
+      description   : str
+      elements      : list[ScreenElement]
+      text          : str
+      timestamp     : float
+      region        : dict | None
+      active_window : str
+      metadata      : dict
+    methods:
+      from_legacy(data: dict) -> ScreenState
+      to_legacy() -> dict
+      text_preview(limit: int = 500) -> str
+
+  ToolCall          : dataclass
+    fields:
+      name       : str
+      arguments  : dict
+      reason     : str
+      call_id    : str
+
+  ToolResult        : dataclass
+    fields:
+      tool_name   : str
+      success     : bool
+      output      : str
+      error       : str
+      data        : dict
+      call_id     : str
+      timestamp   : float
+
+  ModelReply        : dataclass
+    fields:
+      content      : str
+      model_name   : str
+      raw          : Any
+      tool_calls   : list[ToolCall]
+      stop_reason  : str
+      usage        : dict
+      metadata     : dict
+    properties:
+      has_tool_calls -> bool
+
+  AgentTask         : dataclass
+    fields:
+      title          : str
+      kind           : TaskKind
+      instructions   : str
+      priority       : TaskPriority
+      status         : TaskStatus
+      task_id        : str
+      parent_id      : str | None
+      depends_on     : list[str]
+      assigned_model : str
+      assigned_tool  : str
+      attempts       : int
+      max_attempts   : int
+      created_at     : float
+      updated_at     : float
+      context        : dict
+      result         : ToolResult | None
+      notes          : list[str]
+    methods:
+      touch() -> None
+      add_note(note: str) -> None
+      mark_running() -> None
+      mark_done() -> None
+      mark_failed(note: str = "") -> None
+
+  SessionState      : dataclass
+    fields:
+      goal             : str
+      session_id       : str
+      created_at       : float
+      active_model     : str
+      planner_model    : str
+      executor_model   : str
+      status           : str
+      last_screen_state: ScreenState | None
+      task_queue       : list[AgentTask]
+      completed_tasks  : list[AgentTask]
+      failed_tasks     : list[AgentTask]
+      tool_history     : list[ToolResult]
+      notes            : list[str]
+      metadata         : dict
+    methods:
+      enqueue(task: AgentTask) -> None
+      pop_next_task() -> AgentTask | None
+      record_completed(task: AgentTask) -> None
+      record_failed(task: AgentTask, note: str = "") -> None
+      add_tool_result(result: ToolResult) -> None
+      add_note(note: str) -> None
+
+  create_task(
+    title: str,
+    instructions: str,
+    kind: TaskKind = TaskKind.THINK,
+    priority: TaskPriority = TaskPriority.NORMAL,
+    **context,
+  ) -> AgentTask
+    # Helper for creating new queue items with arbitrary context payload.
 
 # =============================================================================
 # screen_capture.py
@@ -50,6 +188,8 @@ screen_capture.py -> exports:
 #          analyze_frame() input MUST be BGR np.ndarray. BGRA or PIL.Image will break the pipeline.
 #          Return dict keys are exactly: "description", "elements", "text".
 #          agent_loop.py keys into these by name — do NOT rename them.
+# NOTE: runtime_models.py exists as the future typed baseline, but vision.py still
+#       returns the legacy dict contract until all callers are migrated together.
 # =============================================================================
 
 vision.py -> exports:
@@ -76,6 +216,8 @@ vision.py -> exports:
 #          Do NOT switch to /api/generate or enable streaming.
 #          load_model() uses /api/generate with empty prompt + keep_alive — correct warm-up pattern.
 #          check_ollama_running() guard in query_model() is what raises ConnectionError. Do not remove.
+# NOTE: runtime_models.py defines the future ModelReply baseline, but ollama_client.py
+#       still returns str until the backend-adapter migration lands.
 # =============================================================================
 
 ollama_client.py -> exports:
@@ -115,6 +257,7 @@ ollama_client.py -> exports:
 #          CUDA environment variables set at module load BEFORE interpreter init — do not reorder.
 #          CUDA_VISIBLE_DEVICES=0 hardcoded to GPU 0 (RTX 4070) — multi-GPU needs adjustment.
 #          num_gpu=999 is intentional — signals unlimited GPU layers with RAM offload.
+# NOTE: agent_loop.py still uses the legacy single-step loop. Queue migration has NOT started yet.
 # =============================================================================
 
 agent_loop.py -> exports:
@@ -188,11 +331,16 @@ main.py -> exports:
 #           -> config.py          [COMPLETE]
 #       -> open-interpreter (external)
 #   -> ollama_client.py           [COMPLETE] (startup only)
+#
+# runtime_models.py currently sits outside the active dependency path and is the
+# new shared baseline for the queue refactor. Existing runtime files do not import
+# it yet to avoid breaking the working prototype in one step.
 
 # =============================================================================
 # FILE STATUS SUMMARY
 # =============================================================================
 # config.py          — Complete (2026-03-01 19:20 EST) — added GPU/RAM config
+# runtime_models.py  — Complete (2026-03-08 10:07 EST) — shared typed runtime baseline added
 # screen_capture.py  — Complete (2026-03-01 18:32 EST)
 # ollama_client.py   — Complete (2026-03-01 18:39 EST)
 # vision.py          — Complete (2026-03-01 18:45 EST) — EasyOCR gpu=True
