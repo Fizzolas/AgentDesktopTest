@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 10:32 EST
+# Last updated: 2026-03-08 10:50 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -14,23 +14,20 @@
 # =============================================================================
 
 config.py -> exports (variables):
-  MODEL_NAME         : str   # e.g. "qwen2.5-coder:7b"
-  OLLAMA_URL         : str   # e.g. "http://localhost:11434"
-  SCREEN_REGION      : dict  # e.g. {"top": 0, "left": 0, "width": 1920, "height": 1080}
-  LOOP_DELAY         : float # seconds between agent loop ticks
-  MAX_RETRIES        : int   # max retries on model query failure
-  DEBUG              : bool  # enable verbose logging
-  BLOCK_CPU_COMPUTE  : bool  # block CPU from performing GPU calculations (True = GPU-only)
-  OLLAMA_NUM_GPU     : int   # number of GPU layers (999 = unlimited, enables RAM offload)
+  MODEL_NAME         : str
+  OLLAMA_URL         : str
+  SCREEN_REGION      : dict
+  LOOP_DELAY         : float
+  MAX_RETRIES        : int
+  DEBUG              : bool
+  BLOCK_CPU_COMPUTE  : bool
+  OLLAMA_NUM_GPU     : int
 
 # =============================================================================
 # runtime_models.py
 # Role: Shared typed runtime layer for the queue-based refactor.
 # Imports from: dataclasses, enum, time, uuid, typing (stdlib only)
-# Status: Complete (baseline types added before runtime migration)
-# NOTE: This file is dependency-light by design so it can become the shared
-#       import base for agent_loop.py, vision.py, tool wrappers, and future
-#       scheduler/planner modules without creating import cycles.
+# Status: Complete
 # =============================================================================
 
 runtime_models.py -> exports:
@@ -56,35 +53,13 @@ runtime_models.py -> exports:
 # model_adapter.py
 # Role: Backend adapter layer for model-agnostic runtime migration.
 # Imports from: config.py, ollama_client.py, runtime_models.py
-# Status: Complete (baseline backend boundary added before agent_loop migration)
-# NOTE: This file should become the default import boundary for future queue,
-#       planner, and executor code. Do not couple new orchestration code directly
-#       to ollama_client.py unless it is Ollama-specific on purpose.
+# Status: Complete
 # =============================================================================
 
 model_adapter.py -> exports:
   BaseModelAdapter   : ABC
-    methods:
-      is_available() -> bool
-      warmup(model_name: str | None = None) -> bool
-      generate_reply(
-        prompt: str,
-        system: str | None = None,
-        model_name: str | None = None,
-        timeout: int = 60,
-      ) -> ModelReply
-      generate_text(
-        prompt: str,
-        system: str | None = None,
-        model_name: str | None = None,
-        timeout: int = 60,
-      ) -> str
-
   OllamaModelAdapter : BaseModelAdapter
-    # Concrete implementation backed by ollama_client.py.
-
   build_default_adapter() -> BaseModelAdapter
-    # Returns OllamaModelAdapter(default_model=MODEL_NAME).
 
 # =============================================================================
 # screen_capture.py
@@ -112,55 +87,57 @@ vision.py -> exports:
 # =============================================================================
 # ollama_client.py
 # Role: Interface to local Ollama model via HTTP API.
-# Imports from: config.py (MODEL_NAME, OLLAMA_URL, MAX_RETRIES, DEBUG), requests, runtime_models.py
+# Imports from: config.py, requests, runtime_models.py
 # Status: Complete
-# FRAGILE: query_model() still returns str for legacy callers.
-# NOTE: query_model_reply() is the new typed baseline for future adapter/queue code.
+# NOTE: query_model_reply() is the typed baseline path; query_model() remains the
+#       legacy text wrapper for older callers.
 # =============================================================================
 
 ollama_client.py -> exports:
   check_ollama_running() -> bool
-    # GET to OLLAMA_URL root with 3s timeout.
-
   load_model(model_name: str) -> bool
-    # Warm-up / preload using /api/generate with empty prompt + keep_alive.
-
   query_model(prompt: str, system: str | None = None) -> str
-    # Legacy plain-string wrapper. Delegates to query_model_reply().
-
   query_model_reply(
     prompt: str,
     system: str | None = None,
     model_name: str | None = None,
     timeout: int = 60,
   ) -> ModelReply
-    # Typed reply path for future queue-based runtime.
-    # Uses /api/chat with stream:False and includes raw response/usage metadata.
 
 # =============================================================================
 # agent_loop.py
 # Role: Core autonomous goal loop. Orchestrates all components.
-# Imports from: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU)
-#               vision.py (get_screen_state)
-#               ollama_client.py (check_ollama_running, query_model)
-#               open-interpreter (interpreter)
-#               time (stdlib)
-#               os (stdlib)
-# Status: Complete
-# NOTE: agent_loop.py still uses the legacy single-step loop. Queue migration has NOT started yet.
+# Imports from: config.py, model_adapter.py, runtime_models.py, vision.py,
+#               open-interpreter, time (stdlib), os (stdlib), typing (stdlib)
+# Status: Complete (Phase 3 baseline refactor: typed session state + internal queue)
+# FRAGILE: interpreter is still configured at module load — do NOT re-configure in main.py.
+#          GOAL_COMPLETE is still the legacy completion signal until explicit task-state
+#          completion fully replaces it in a later phase.
+# NOTE: The active runtime still executes through Open Interpreter, but now stores
+#       typed SessionState and AgentTask data under the loop.
 # =============================================================================
 
 agent_loop.py -> exports:
   run(goal: str) -> None
-  step(goal: str, screen_state: dict) -> str
+    # Creates a typed SessionState, verifies backend availability through the
+    # default model adapter, then loops until completion/interruption.
+
+  step(goal: str, screen_state: dict | ScreenState) -> str
+    # Converts legacy or typed screen input into ScreenState.
+    # Pops the next AgentTask from the internal queue, builds a task-aware prompt,
+    # executes via Open Interpreter, records completion, and seeds follow-up tasks.
+
+  get_session_snapshot() -> dict
+    # Returns a lightweight serializable view of the active SessionState,
+    # including queue state, recent completed tasks, metadata, and last screen state.
+
   stop() -> None
+    # Stops the loop, clears interpreter.messages, and marks the active session stopped.
 
 # =============================================================================
 # main.py
 # Role: Entry point. Wires config + agent loop together. Minimal logic.
-# Imports from: config.py (DEBUG, MODEL_NAME, OLLAMA_URL)
-#               agent_loop.py (run)
-#               ollama_client.py (check_ollama_running, load_model) [startup only — not runtime]
+# Imports from: config.py, agent_loop.py, ollama_client.py
 # Status: Complete
 # =============================================================================
 
@@ -175,6 +152,6 @@ main.py -> exports:
 # model_adapter.py   — Complete (2026-03-08 10:32 EST) — backend adapter baseline added
 # screen_capture.py  — Complete
 # ollama_client.py   — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
-# vision.py          — Complete
-# agent_loop.py      — Complete — legacy runtime still active
+# vision.py          — Complete — still returning legacy dict state
+# agent_loop.py      — Complete (2026-03-08 10:50 EST) — typed session and internal task queue scaffold added
 # main.py            — Complete
