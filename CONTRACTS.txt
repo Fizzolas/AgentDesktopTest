@@ -1,185 +1,60 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 11:13 EST
-# Rules:
-#   - Never call a function with different args than defined here
-#   - Never change a return type without updating this file AND all callers
-#   - Never import a file not listed in that file's "Imports from" section
-#   - Update this file every time a function is added, changed, or removed
+# Last updated: 2026-03-08 11:27 EST
 
-# =============================================================================
-# config.py
-# Role: Global constants. Imported by nearly everything. No functions — variables only.
-# Imports from: (none)
-# Status: Complete
-# =============================================================================
-
-config.py -> exports (variables):
-  MODEL_NAME         : str
-  OLLAMA_URL         : str
-  SCREEN_REGION      : dict
-  LOOP_DELAY         : float
-  MAX_RETRIES        : int
-  DEBUG              : bool
-  BLOCK_CPU_COMPUTE  : bool
-  OLLAMA_NUM_GPU     : int
-
-# =============================================================================
-# runtime_models.py
-# Role: Shared typed runtime layer for the queue-based refactor.
-# Imports from: dataclasses, enum, time, uuid, typing (stdlib only)
-# Status: Complete
-# =============================================================================
-
-runtime_models.py -> exports:
-  TaskStatus        : Enum[str]
-  TaskPriority      : Enum[int]
-  TaskKind          : Enum[str]
-  ScreenElement     : dataclass
-  ScreenState       : dataclass
-  ToolCall          : dataclass
-  ToolResult        : dataclass
-  ModelReply        : dataclass
-  AgentTask         : dataclass
-  SessionState      : dataclass
-  create_task(
-    title: str,
-    instructions: str,
-    kind: TaskKind = TaskKind.THINK,
-    priority: TaskPriority = TaskPriority.NORMAL,
-    **context,
-  ) -> AgentTask
-
-# =============================================================================
-# model_adapter.py
-# Role: Backend adapter layer for model-agnostic runtime migration.
-# Imports from: config.py, ollama_client.py, runtime_models.py
-# Status: Complete
-# =============================================================================
-
-model_adapter.py -> exports:
-  BaseModelAdapter   : ABC
-  OllamaModelAdapter : BaseModelAdapter
-  build_default_adapter() -> BaseModelAdapter
-
-# =============================================================================
-# runtime_controller.py
-# Role: Shared runtime control surface for shell/GUI layers.
-# Imports from: config.py, agent_loop.py, monitor.py, model_adapter.py
-# Status: Complete (Phase 7 baseline refactor: shared controller layer added)
-# NOTE: UI surfaces should call this file instead of duplicating startup, goal,
-#       run, status, and health logic.
-# =============================================================================
+config.py -> exports (variables/functions):
+  MODEL_NAME: str
+  OLLAMA_URL: str
+  SCREEN_REGION: dict
+  LOOP_DELAY: float
+  MAX_RETRIES: int
+  DEBUG: bool
+  BLOCK_CPU_COMPUTE: bool
+  OLLAMA_NUM_GPU: int
+  GUI_REFRESH_MS: int
+  START_MONITOR_ON_GUI: bool
+  load_runtime_settings() -> dict
+  save_runtime_settings(settings: dict) -> dict
+  get_runtime_settings() -> dict
+  apply_runtime_settings(settings: dict | None = None) -> dict
+  update_setting(key: str, value) -> dict
+  update_screen_region_value(field: str, value: int) -> dict
+  reset_runtime_settings() -> dict
 
 runtime_controller.py -> exports:
   RuntimeController : dataclass
     methods:
       get_banner_info() -> dict
+      get_settings() -> dict
       startup() -> dict
+      apply_all_startup_services() -> dict
+      warmup_current_model() -> dict
       set_goal(goal: str) -> str
+      get_current_goal() -> str
       clear_goal() -> None
       has_goal() -> bool
       run_goal(goal: str | None = None) -> dict
       stop_runtime() -> None
+      shutdown() -> None
       get_runtime_snapshot() -> dict
       get_dashboard_status() -> dict
       get_full_status() -> dict
       get_queue_snapshot() -> list[dict]
       get_recent_notes() -> list[str]
       get_last_result() -> dict
-
+      start_monitoring() -> None
+      stop_monitoring() -> None
+      is_monitoring() -> bool
+      update_setting(key: str, value) -> dict
+      update_screen_region_value(field: str, value: int) -> dict
   build_runtime_controller() -> RuntimeController
 
-# =============================================================================
-# screen_capture.py
-# Role: Raw screen grab utility. Base layer — no project imports.
-# Imports from: (none — uses mss, numpy only)
-# Status: Complete
-# =============================================================================
-
-screen_capture.py -> exports:
-  capture_screen(region: dict | None = None) -> np.ndarray
-
-# =============================================================================
-# vision.py
-# Role: Analyzes screen frames. Returns structured description for the agent.
-# Imports from: screen_capture.py, runtime_models.py, cv2, easyocr, numpy, hashlib, time
-# Status: Complete
-# =============================================================================
-
-vision.py -> exports:
-  analyze_frame(img: np.ndarray) -> dict
-  analyze_frame_typed(img: np.ndarray, region: dict | None = None) -> ScreenState
-  get_screen_state(region: dict | None = None) -> dict
-  get_screen_state_typed(region: dict | None = None) -> ScreenState
-
-# =============================================================================
-# ollama_client.py
-# Role: Interface to local Ollama model via HTTP API.
-# Imports from: config.py, requests, runtime_models.py
-# Status: Complete
-# =============================================================================
-
-ollama_client.py -> exports:
-  check_ollama_running() -> bool
-  load_model(model_name: str) -> bool
-  query_model(prompt: str, system: str | None = None) -> str
-  query_model_reply(
-    prompt: str,
-    system: str | None = None,
-    model_name: str | None = None,
-    timeout: int = 60,
-  ) -> ModelReply
-
-# =============================================================================
-# agent_loop.py
-# Role: Core autonomous goal loop. Orchestrates all components.
-# Imports from: config.py, model_adapter.py, runtime_models.py, vision.py,
-#               open-interpreter, time (stdlib), os (stdlib), typing (stdlib)
-# Status: Complete
-# =============================================================================
-
-agent_loop.py -> exports:
-  run(goal: str) -> None
-  step(goal: str, screen_state: dict | ScreenState) -> str
-  get_session_snapshot() -> dict
-  stop() -> None
-
-# =============================================================================
-# main.py
-# Role: Entry point and lightweight runtime shell for the desktop agent.
-# Imports from: runtime_controller.py, sys (stdlib)
-# Status: Complete (Phase 7 baseline refactor: shell moved onto shared controller)
-# NOTE: Still transitional. Final polished GUI should consume runtime_controller.py too.
-# =============================================================================
-
-main.py -> exports:
-  print_runtime_snapshot(snapshot: dict) -> None
+gui_app.py -> exports:
+  AgentDesktopGUI : tkinter.Tk
   main() -> None
 
-# =============================================================================
-# monitor.py
-# Role: System health monitor. Tracks Ollama status, memory usage, GPU stats, and agent runtime state.
-# Imports from: config.py, agent_loop.py (lazy import), psutil, requests, time,
-#               threading, os, sys, json, pathlib, datetime
-# Status: Complete
-# =============================================================================
+main.py -> exports:
+  main() -> None
 
-monitor.py -> exports:
-  start_monitoring() -> None
-  stop_monitoring() -> None
-  get_current_status() -> dict
-  get_dashboard_status() -> dict
-
-# =============================================================================
-# FILE STATUS SUMMARY
-# =============================================================================
-# config.py            — Complete
-# runtime_models.py    — Complete (2026-03-08 10:07 EST) — shared typed runtime baseline added
-# model_adapter.py     — Complete (2026-03-08 10:32 EST) — backend adapter baseline added
-# runtime_controller.py— Complete (2026-03-08 11:13 EST) — shared shell/GUI controller layer added
-# screen_capture.py    — Complete
-# vision.py            — Complete (2026-03-08 11:00 EST) — typed ScreenState path added, legacy dict path preserved
-# ollama_client.py     — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
-# agent_loop.py        — Complete (2026-03-08 10:50 EST) — typed session and internal task queue scaffold added
-# main.py              — Complete (2026-03-08 11:13 EST) — shell now uses shared runtime controller
-# monitor.py           — Complete (2026-03-08 11:09 EST) — runtime-aware monitoring and dashboard payload added
+shell_main.py -> exports:
+  print_runtime_snapshot(snapshot: dict) -> None
+  main() -> None

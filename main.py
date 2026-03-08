@@ -1,6 +1,26 @@
 from __future__ import annotations
 
-from gui_app import main
+import sys
+
+
+def main() -> None:
+    try:
+        from gui_app import main as gui_main
+    except Exception as e:
+        print(f"[main] GUI import failed: {e}")
+        from shell_main import main as shell_main
+        print("[main] Falling back to shell mode.")
+        shell_main()
+        return
+
+    try:
+        gui_main()
+    except Exception as e:
+        print(f"[main] GUI launch failed: {e}")
+        from shell_main import main as shell_main
+        print("[main] Falling back to shell mode.")
+        shell_main()
+
 
 if __name__ == "__main__":
     main()
