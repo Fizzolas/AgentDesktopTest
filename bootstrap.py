@@ -4,6 +4,7 @@ import importlib.util
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from config import get_runtime_settings
 
@@ -43,7 +44,16 @@ def _module_installed(module_name: str) -> bool:
 
 
 
+def _python_label() -> str:
+    try:
+        return str(Path(sys.executable).resolve())
+    except Exception:
+        return sys.executable
+
+
+
 def _install_package(package_name: str) -> tuple[bool, str]:
+    print(f"[bootstrap] Installing {package_name} into {_python_label()} ...", flush=True)
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", package_name],
@@ -52,9 +62,13 @@ def _install_package(package_name: str) -> tuple[bool, str]:
             timeout=300,
         )
         if result.returncode == 0:
+            print(f"[bootstrap] Installed {package_name} successfully.", flush=True)
             return True, result.stdout.strip()
-        return False, (result.stderr or result.stdout).strip()
+        error_text = (result.stderr or result.stdout).strip()
+        print(f"[bootstrap] Failed to install {package_name}: {error_text}", flush=True)
+        return False, error_text
     except Exception as e:
+        print(f"[bootstrap] Failed to install {package_name}: {e}", flush=True)
         return False, str(e)
 
 
@@ -82,6 +96,8 @@ def ensure_runtime_dependencies() -> dict:
         ),
     }
 
+    print(f"[bootstrap] Python environment: {_python_label()}", flush=True)
+
     for provider in providers.values():
         if provider.enabled and not provider.installed and provider.auto_install:
             provider.install_attempted = True
@@ -99,14 +115,22 @@ def ensure_runtime_dependencies() -> dict:
     if not selected.enabled or not selected.installed:
         fallback = providers["open_interpreter"]
         if fallback.enabled and fallback.installed:
+            previous_active = active
             active = "open_interpreter"
-            fallback_applied = active != settings["ACTIVE_TOOL_PROVIDER"]
+            fallback_applied = previous_active != active
             selected = fallback
 
-    return {
+    status = {
         "requested_provider": settings["ACTIVE_TOOL_PROVIDER"],
         "active_provider": active,
         "fallback_applied": fallback_applied,
         "providers": {name: provider.to_dict() for name, provider in providers.items()},
         "ready": selected.enabled and selected.installed,
+        "python_executable": _python_label(),
     }
+    print(
+        f"[bootstrap] Dependency status: requested={status['requested_provider']} "
+        f"active={status['active_provider']} ready={status['ready']}",
+        flush=True,
+    )
+    return status

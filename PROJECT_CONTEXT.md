@@ -2,8 +2,9 @@
 
 ## CURRENT STATE
 - Branch: fix/runtime-baseline-01
-- Phase: final full-surface polish pass complete
+- Phase: entrypoint venv bootstrap + launch visibility pass complete
 - GUI: main.py launches the Tk desktop GUI by default; shell_main.py is fallback if GUI import/launch fails
+- Venv bootstrap: main.py now auto-creates `.venv`, relaunches itself inside that environment, installs base requirements into it, and then runs provider bootstrap there
 - Settings: persisted to agent_settings.json and applied immediately across runtime/model-facing modules
 - Startup: GUI boot initializes bootstrap checks, controller services, provider readiness, backend warmup, and monitor services automatically when enabled
 - Tool providers: both open_interpreter and agents2_s3 have persisted enable flags, auto-install flags, active-provider selection, and startup readiness checks
@@ -14,6 +15,12 @@
 - Goal: real application behavior instead of a loose collection of scripts
 
 ## CHANGELOG
+### [2026-03-08 11:53 EST] — Entrypoint Venv Bootstrap + Launch Visibility Pass
+- Updated main.py to auto-create a local `.venv`, relaunch the app inside it, and install requirements into that environment before runtime bootstrap
+- Updated main.py startup output so double-click or direct launch no longer appears as a silent blank console during long startup work
+- Updated bootstrap.py install reporting so provider installs show visible progress and confirm the active Python executable
+- Kept provider auto-installs inside the project virtual environment so open-interpreter and agents2-s3 land in the same runtime used by the app
+
 ### [2026-03-08 11:44 EST] — Final Full-Surface Polish Pass
 - Updated gui_app.py to expose AUTO_TOOL_SELECTION and ADAPTIVE_VISION as live GUI toggles
 - Updated gui_app.py dashboard and run views to surface provider, route, route reason, and vision reason
