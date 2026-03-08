@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import agent_loop
 import monitor
+from bootstrap import ensure_runtime_dependencies
 from config import (
     get_runtime_settings,
     update_screen_region_value as config_update_screen_region_value,
@@ -17,6 +18,7 @@ class RuntimeController:
     adapter: BaseModelAdapter = field(default_factory=build_default_adapter)
     current_goal: str = ""
     started: bool = False
+    dependency_status: dict = field(default_factory=dict)
 
     def get_banner_info(self) -> dict:
         settings = get_runtime_settings()
@@ -25,14 +27,19 @@ class RuntimeController:
             "backend": settings["OLLAMA_URL"],
             "debug": settings["DEBUG"],
             "ui_mode": "gui_primary",
+            "tool_provider": settings["ACTIVE_TOOL_PROVIDER"],
             "gui_note": "GUI is the primary app surface; shell is fallback only.",
         }
 
     def get_settings(self) -> dict:
         return get_runtime_settings()
 
+    def get_dependency_status(self) -> dict:
+        return self.dependency_status or ensure_runtime_dependencies()
+
     def startup(self) -> dict:
         settings = get_runtime_settings()
+        self.dependency_status = ensure_runtime_dependencies()
         self.adapter = build_default_adapter()
         backend_reachable = self.adapter.is_available()
         warmup_ok = self.adapter.warmup(settings["MODEL_NAME"]) if backend_reachable else False
@@ -42,6 +49,8 @@ class RuntimeController:
             "backend_url": settings["OLLAMA_URL"],
             "model_name": settings["MODEL_NAME"],
             "warmup_ok": warmup_ok,
+            "dependency_status": self.dependency_status,
+            "tool_provider": self.dependency_status.get("active_provider", settings["ACTIVE_TOOL_PROVIDER"]),
         }
 
     def apply_all_startup_services(self) -> dict:
@@ -88,10 +97,17 @@ class RuntimeController:
             monitor.stop_monitoring()
 
     def get_runtime_snapshot(self) -> dict:
-        return agent_loop.get_session_snapshot()
+        snapshot = agent_loop.get_session_snapshot()
+        if self.dependency_status:
+            snapshot["dependency_status"] = self.dependency_status
+        return snapshot
 
     def get_dashboard_status(self) -> dict:
-        return monitor.get_dashboard_status()
+        status = monitor.get_dashboard_status()
+        if self.dependency_status:
+            status["dependency_status"] = self.dependency_status
+            status["tool_provider"] = self.dependency_status.get("active_provider", self.get_settings()["ACTIVE_TOOL_PROVIDER"])
+        return status
 
     def get_full_status(self) -> dict:
         return monitor.get_current_status()
@@ -121,6 +137,7 @@ class RuntimeController:
     def update_setting(self, key: str, value) -> dict:
         updated = config_update_setting(key, value)
         self.adapter = build_default_adapter()
+        self.dependency_status = ensure_runtime_dependencies()
         if key == "START_MONITOR_ON_GUI":
             if updated["START_MONITOR_ON_GUI"]:
                 monitor.start_monitoring()

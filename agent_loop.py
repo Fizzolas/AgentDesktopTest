@@ -16,8 +16,7 @@ import os
 import time
 from typing import Any
 
-from interpreter import interpreter
-
+from bootstrap import ensure_runtime_dependencies
 from config import (
     MODEL_NAME,
     OLLAMA_URL,
@@ -25,10 +24,23 @@ from config import (
     DEBUG,
     BLOCK_CPU_COMPUTE,
     OLLAMA_NUM_GPU,
+    ACTIVE_TOOL_PROVIDER,
+    ENABLE_OPEN_INTERPRETER_TOOLS,
+    ENABLE_AGENTS2_S3_TOOLS,
 )
 from model_adapter import build_default_adapter
 from runtime_models import AgentTask, ScreenState, SessionState, TaskKind, TaskPriority, create_task
 from vision import get_screen_state
+
+_dependency_status = ensure_runtime_dependencies()
+
+try:
+    from interpreter import interpreter
+except Exception as e:
+    raise RuntimeError(
+        "Open Interpreter is required for the current runtime path. "
+        "Enable auto-install or install open-interpreter manually."
+    ) from e
 
 # =============================================================================
 # Block CPU from performing ANY GPU compute operations
@@ -78,10 +90,20 @@ When the goal is fully accomplished, respond with exactly: GOAL_COMPLETE
 # =============================================================================
 # Internal helpers — typed session baseline + queue scaffolding
 # =============================================================================
+def _tool_provider_note() -> str:
+    notes = [f"ACTIVE TOOL PROVIDER SETTING: {ACTIVE_TOOL_PROVIDER}"]
+    notes.append(f"OPEN_INTERPRETER TOOLS ENABLED: {ENABLE_OPEN_INTERPRETER_TOOLS}")
+    notes.append(f"AGENTS2_S3 TOOLS ENABLED: {ENABLE_AGENTS2_S3_TOOLS}")
+    notes.append(f"BOOTSTRAP ACTIVE PROVIDER: {_dependency_status.get('active_provider', 'unknown')}")
+    return "\n".join(notes)
+
+
+
 def _normalize_screen_state(screen_state: dict | ScreenState | None) -> ScreenState:
     if isinstance(screen_state, ScreenState):
         return screen_state
     return ScreenState.from_legacy(screen_state or {})
+
 
 
 def _make_session(goal: str) -> SessionState:
@@ -92,9 +114,11 @@ def _make_session(goal: str) -> SessionState:
         executor_model=MODEL_NAME,
         status="starting",
     )
+    session.metadata["tool_provider"] = _dependency_status.get("active_provider", ACTIVE_TOOL_PROVIDER)
     session.add_note("Session created.")
     _seed_initial_queue(session)
     return session
+
 
 
 def _seed_initial_queue(session: SessionState) -> None:
@@ -122,6 +146,7 @@ def _seed_initial_queue(session: SessionState) -> None:
             priority=TaskPriority.HIGH,
         )
     )
+
 
 
 def _ensure_follow_up_tasks(session: SessionState, completed_task: AgentTask | None = None) -> None:
@@ -178,6 +203,7 @@ def _ensure_follow_up_tasks(session: SessionState, completed_task: AgentTask | N
         )
 
 
+
 def _next_task(session: SessionState) -> AgentTask:
     task = session.pop_next_task()
     if task is None:
@@ -194,6 +220,7 @@ def _next_task(session: SessionState) -> AgentTask:
     return task
 
 
+
 def _queue_preview(session: SessionState, limit: int = 5) -> str:
     if not session.task_queue:
         return "(empty)"
@@ -201,6 +228,7 @@ def _queue_preview(session: SessionState, limit: int = 5) -> str:
     for task in session.task_queue[:limit]:
         lines.append(f"- [{task.kind.value}|{task.priority.name}] {task.title}")
     return "\n".join(lines)
+
 
 
 def _build_prompt(goal: str, session: SessionState, task: AgentTask, screen_state: ScreenState) -> str:
@@ -212,6 +240,7 @@ def _build_prompt(goal: str, session: SessionState, task: AgentTask, screen_stat
         f"TASK KIND: {task.kind.value}",
         f"TASK INSTRUCTIONS: {task.instructions}",
         f"CURRENT SCREEN: {screen_state.description or 'No screen data available.'}",
+        _tool_provider_note(),
     ]
 
     visible_text = screen_state.text_preview(500)
@@ -232,11 +261,13 @@ def _build_prompt(goal: str, session: SessionState, task: AgentTask, screen_stat
     return "\n\n".join(prompt_parts)
 
 
+
 def _extract_action(response_messages: list[dict[str, Any]]) -> str:
     for msg in reversed(response_messages):
         if msg.get("role") == "assistant" and msg.get("content"):
             return str(msg["content"]).strip()
     return ""
+
 
 
 def _record_completed_task(session: SessionState, task: AgentTask, action: str) -> None:
@@ -246,6 +277,7 @@ def _record_completed_task(session: SessionState, task: AgentTask, action: str) 
     session.metadata["last_completed_task_id"] = task.task_id
     if action:
         session.metadata["last_action"] = action[:2000]
+
 
 
 def _task_to_dict(task: AgentTask) -> dict[str, Any]:
@@ -268,10 +300,6 @@ def _task_to_dict(task: AgentTask) -> dict[str, Any]:
 # Public API
 # =============================================================================
 def step(goal: str, screen_state: dict | ScreenState) -> str:
-    """
-    Runs a single agent tick using the new typed session baseline while preserving
-    the legacy Open Interpreter execution path.
-    """
     global _active_session, _last_action
 
     session = _active_session if _active_session and _active_session.goal == goal else _make_session(goal)
@@ -306,13 +334,13 @@ def step(goal: str, screen_state: dict | ScreenState) -> str:
     return action
 
 
+
 def run(goal: str) -> None:
-    """
-    Main entry point for the agent loop.
-    Accepts a plain-English goal string.
-    Runs continuously until GOAL_COMPLETE is returned or user interrupts (Ctrl+C).
-    """
-    global _running, _active_session, _last_action
+    global _running, _active_session, _last_action, _dependency_status
+
+    _dependency_status = ensure_runtime_dependencies()
+    if not _dependency_status.get("providers", {}).get("open_interpreter", {}).get("installed"):
+        raise RuntimeError("Open Interpreter is not installed or could not be auto-installed.")
 
     if not _model_adapter.is_available():
         raise ConnectionError("Ollama is not reachable. Start Ollama before calling agent_loop.run().")
@@ -355,17 +383,15 @@ def run(goal: str) -> None:
             print(f"[agent_loop] Loop exited after {tick} tick(s).")
 
 
+
 def get_session_snapshot() -> dict:
-    """
-    Returns a lightweight snapshot of the current typed session state.
-    This is the first public inspection hook for future UI and task-queue tooling.
-    """
     session = _active_session
     if session is None:
         return {
             "active": False,
             "running": _running,
             "last_action": _last_action,
+            "tool_provider": _dependency_status.get("active_provider", ACTIVE_TOOL_PROVIDER),
         }
 
     return {
@@ -382,6 +408,7 @@ def get_session_snapshot() -> dict:
         "failed_task_count": len(session.failed_tasks),
         "pending_task_count": len(session.task_queue),
         "last_action": _last_action,
+        "tool_provider": session.metadata.get("tool_provider", _dependency_status.get("active_provider", ACTIVE_TOOL_PROVIDER)),
         "last_screen_state": session.last_screen_state.to_legacy() if session.last_screen_state else None,
         "pending_tasks": [_task_to_dict(task) for task in session.task_queue],
         "completed_tasks": [_task_to_dict(task) for task in session.completed_tasks[-10:]],
@@ -390,12 +417,8 @@ def get_session_snapshot() -> dict:
     }
 
 
+
 def stop() -> None:
-    """
-    Gracefully stops the agent loop and cleans up the interpreter session.
-    Sets _running to False so the run() while loop exits on next iteration.
-    Resets interpreter message history to free memory.
-    """
     global _running
     _running = False
     interpreter.messages = []

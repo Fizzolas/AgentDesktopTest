@@ -19,6 +19,14 @@ DEFAULT_SETTINGS = {
     "DEBUG": False,
     "GUI_REFRESH_MS": 1500,
     "START_MONITOR_ON_GUI": True,
+    "AUTO_INSTALL_DEPENDENCIES": True,
+    "AUTO_INSTALL_OPEN_INTERPRETER": True,
+    "AUTO_INSTALL_AGENTS2_S3": True,
+    "ENABLE_OPEN_INTERPRETER_TOOLS": True,
+    "ENABLE_AGENTS2_S3_TOOLS": True,
+    "ACTIVE_TOOL_PROVIDER": "open_interpreter",
+    "AGENTS2_S3_PIP_PACKAGE": "agents2-s3",
+    "AGENTS2_S3_MODULE": "agents2_s3",
 }
 
 
@@ -55,6 +63,16 @@ def _normalize_settings(raw: dict | None) -> dict:
     data["DEBUG"] = bool(data["DEBUG"])
     data["GUI_REFRESH_MS"] = max(500, int(data["GUI_REFRESH_MS"]))
     data["START_MONITOR_ON_GUI"] = bool(data["START_MONITOR_ON_GUI"])
+    data["AUTO_INSTALL_DEPENDENCIES"] = bool(data["AUTO_INSTALL_DEPENDENCIES"])
+    data["AUTO_INSTALL_OPEN_INTERPRETER"] = bool(data["AUTO_INSTALL_OPEN_INTERPRETER"])
+    data["AUTO_INSTALL_AGENTS2_S3"] = bool(data["AUTO_INSTALL_AGENTS2_S3"])
+    data["ENABLE_OPEN_INTERPRETER_TOOLS"] = bool(data["ENABLE_OPEN_INTERPRETER_TOOLS"])
+    data["ENABLE_AGENTS2_S3_TOOLS"] = bool(data["ENABLE_AGENTS2_S3_TOOLS"])
+
+    provider = str(data["ACTIVE_TOOL_PROVIDER"] or DEFAULT_SETTINGS["ACTIVE_TOOL_PROVIDER"]).strip().lower()
+    data["ACTIVE_TOOL_PROVIDER"] = provider if provider in {"open_interpreter", "agents2_s3"} else DEFAULT_SETTINGS["ACTIVE_TOOL_PROVIDER"]
+    data["AGENTS2_S3_PIP_PACKAGE"] = str(data["AGENTS2_S3_PIP_PACKAGE"] or DEFAULT_SETTINGS["AGENTS2_S3_PIP_PACKAGE"]).strip() or DEFAULT_SETTINGS["AGENTS2_S3_PIP_PACKAGE"]
+    data["AGENTS2_S3_MODULE"] = str(data["AGENTS2_S3_MODULE"] or DEFAULT_SETTINGS["AGENTS2_S3_MODULE"]).strip() or DEFAULT_SETTINGS["AGENTS2_S3_MODULE"]
     return data
 
 
@@ -89,13 +107,7 @@ def _apply_environment_flags() -> None:
         os.environ["OMP_NUM_THREADS"] = "1"
         os.environ["MKL_NUM_THREADS"] = "1"
     else:
-        for key in [
-            "CUDA_LAUNCH_BLOCKING",
-            "CUDA_DEVICE_ORDER",
-            "CUDA_VISIBLE_DEVICES",
-            "OMP_NUM_THREADS",
-            "MKL_NUM_THREADS",
-        ]:
+        for key in ["CUDA_LAUNCH_BLOCKING", "CUDA_DEVICE_ORDER", "CUDA_VISIBLE_DEVICES", "OMP_NUM_THREADS", "MKL_NUM_THREADS"]:
             os.environ.pop(key, None)
 
 
@@ -103,6 +115,9 @@ def _apply_environment_flags() -> None:
 def _set_module_globals(settings: dict) -> None:
     global MODEL_NAME, OLLAMA_URL, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU
     global SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG, GUI_REFRESH_MS, START_MONITOR_ON_GUI
+    global AUTO_INSTALL_DEPENDENCIES, AUTO_INSTALL_OPEN_INTERPRETER, AUTO_INSTALL_AGENTS2_S3
+    global ENABLE_OPEN_INTERPRETER_TOOLS, ENABLE_AGENTS2_S3_TOOLS, ACTIVE_TOOL_PROVIDER
+    global AGENTS2_S3_PIP_PACKAGE, AGENTS2_S3_MODULE
 
     MODEL_NAME = settings["MODEL_NAME"]
     OLLAMA_URL = settings["OLLAMA_URL"]
@@ -114,6 +129,14 @@ def _set_module_globals(settings: dict) -> None:
     DEBUG = settings["DEBUG"]
     GUI_REFRESH_MS = settings["GUI_REFRESH_MS"]
     START_MONITOR_ON_GUI = settings["START_MONITOR_ON_GUI"]
+    AUTO_INSTALL_DEPENDENCIES = settings["AUTO_INSTALL_DEPENDENCIES"]
+    AUTO_INSTALL_OPEN_INTERPRETER = settings["AUTO_INSTALL_OPEN_INTERPRETER"]
+    AUTO_INSTALL_AGENTS2_S3 = settings["AUTO_INSTALL_AGENTS2_S3"]
+    ENABLE_OPEN_INTERPRETER_TOOLS = settings["ENABLE_OPEN_INTERPRETER_TOOLS"]
+    ENABLE_AGENTS2_S3_TOOLS = settings["ENABLE_AGENTS2_S3_TOOLS"]
+    ACTIVE_TOOL_PROVIDER = settings["ACTIVE_TOOL_PROVIDER"]
+    AGENTS2_S3_PIP_PACKAGE = settings["AGENTS2_S3_PIP_PACKAGE"]
+    AGENTS2_S3_MODULE = settings["AGENTS2_S3_MODULE"]
 
 
 
@@ -144,6 +167,9 @@ def _sync_loaded_modules() -> None:
         module.DEBUG = DEBUG
         module.BLOCK_CPU_COMPUTE = BLOCK_CPU_COMPUTE
         module.OLLAMA_NUM_GPU = OLLAMA_NUM_GPU
+        module.ACTIVE_TOOL_PROVIDER = ACTIVE_TOOL_PROVIDER
+        module.ENABLE_OPEN_INTERPRETER_TOOLS = ENABLE_OPEN_INTERPRETER_TOOLS
+        module.ENABLE_AGENTS2_S3_TOOLS = ENABLE_AGENTS2_S3_TOOLS
 
         if hasattr(module, "interpreter"):
             try:
@@ -165,6 +191,7 @@ def _sync_loaded_modules() -> None:
             session.active_model = MODEL_NAME
             session.planner_model = MODEL_NAME
             session.executor_model = MODEL_NAME
+            session.metadata["tool_provider"] = ACTIVE_TOOL_PROVIDER
 
 
 
@@ -180,6 +207,14 @@ def get_runtime_settings() -> dict:
         "DEBUG": DEBUG,
         "GUI_REFRESH_MS": GUI_REFRESH_MS,
         "START_MONITOR_ON_GUI": START_MONITOR_ON_GUI,
+        "AUTO_INSTALL_DEPENDENCIES": AUTO_INSTALL_DEPENDENCIES,
+        "AUTO_INSTALL_OPEN_INTERPRETER": AUTO_INSTALL_OPEN_INTERPRETER,
+        "AUTO_INSTALL_AGENTS2_S3": AUTO_INSTALL_AGENTS2_S3,
+        "ENABLE_OPEN_INTERPRETER_TOOLS": ENABLE_OPEN_INTERPRETER_TOOLS,
+        "ENABLE_AGENTS2_S3_TOOLS": ENABLE_AGENTS2_S3_TOOLS,
+        "ACTIVE_TOOL_PROVIDER": ACTIVE_TOOL_PROVIDER,
+        "AGENTS2_S3_PIP_PACKAGE": AGENTS2_S3_PIP_PACKAGE,
+        "AGENTS2_S3_MODULE": AGENTS2_S3_MODULE,
     }
 
 

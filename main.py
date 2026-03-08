@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import sys
+from bootstrap import ensure_runtime_dependencies
+
 
 
 def main() -> None:
+    ensure_runtime_dependencies()
     try:
         from gui_app import main as gui_main
     except Exception as e:

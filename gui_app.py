@@ -200,11 +200,13 @@ class AgentDesktopGUI(tk.Tk):
         runtime_frame = ttk.LabelFrame(body, text="Runtime", style="Card.TLabelframe", padding=12)
         region_frame = ttk.LabelFrame(body, text="Screen Region", style="Card.TLabelframe", padding=12)
         app_frame = ttk.LabelFrame(body, text="Application", style="Card.TLabelframe", padding=12)
+        tools_frame = ttk.LabelFrame(body, text="Tool Providers", style="Card.TLabelframe", padding=12)
         model_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         runtime_frame.grid(row=0, column=1, sticky="nsew", pady=(0, 8))
-        region_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
-        app_frame.grid(row=1, column=1, sticky="nsew")
-        for frame in [model_frame, runtime_frame, region_frame, app_frame]:
+        region_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
+        app_frame.grid(row=1, column=1, sticky="nsew", pady=(0, 8))
+        tools_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
+        for frame in [model_frame, runtime_frame, region_frame, app_frame, tools_frame]:
             frame.columnconfigure(1, weight=1)
 
         self._add_text_setting(model_frame, 0, "MODEL_NAME", "Model Name", combo_values=["qwen2.5-coder:7b", "deepseek-r1:8b", "qwen2.5:7b", "llama3.1:8b", "codellama:7b"])
@@ -223,6 +225,15 @@ class AgentDesktopGUI(tk.Tk):
 
         self._add_numeric_setting(app_frame, 0, "GUI_REFRESH_MS", "Refresh Interval (ms)", int, 500, 10000, 100)
         self._add_toggle_setting(app_frame, 1, "START_MONITOR_ON_GUI", "Run Monitor With GUI")
+        self._add_toggle_setting(app_frame, 2, "AUTO_INSTALL_DEPENDENCIES", "Auto Install Missing Dependencies")
+
+        self._add_text_setting(tools_frame, 0, "ACTIVE_TOOL_PROVIDER", "Active Tool Provider", combo_values=["open_interpreter", "agents2_s3"])
+        self._add_toggle_setting(tools_frame, 1, "ENABLE_OPEN_INTERPRETER_TOOLS", "Enable Open Interpreter Tools")
+        self._add_toggle_setting(tools_frame, 2, "ENABLE_AGENTS2_S3_TOOLS", "Enable agents2-s3 Tools")
+        self._add_toggle_setting(tools_frame, 3, "AUTO_INSTALL_OPEN_INTERPRETER", "Auto Install Open Interpreter")
+        self._add_toggle_setting(tools_frame, 4, "AUTO_INSTALL_AGENTS2_S3", "Auto Install agents2-s3")
+        self._add_text_setting(tools_frame, 5, "AGENTS2_S3_PIP_PACKAGE", "agents2-s3 Pip Package")
+        self._add_text_setting(tools_frame, 6, "AGENTS2_S3_MODULE", "agents2-s3 Module Name")
 
     def _set_text_widget(self, widget: ScrolledText, content: str) -> None:
         widget.configure(state="normal")
@@ -278,11 +289,13 @@ class AgentDesktopGUI(tk.Tk):
 
     def _startup_runtime_services(self) -> None:
         result = self.controller.apply_all_startup_services()
+        deps = result.get("dependency_status", {})
+        active_provider = deps.get("active_provider", result.get("tool_provider", "unknown"))
         self.monitor_state_var.set(f"Monitor: {'running' if result.get('monitoring') else 'stopped'}")
         self.summary_var.set(
-            f"Backend {'ready' if result['backend_reachable'] else 'offline'} at {result['backend_url']} | model {result['model_name']} | warmup={'ok' if result['warmup_ok'] else 'pending'}"
+            f"Backend {'ready' if result['backend_reachable'] else 'offline'} at {result['backend_url']} | model {result['model_name']} | provider {active_provider} | warmup={'ok' if result['warmup_ok'] else 'pending'}"
         )
-        self.footer_var.set("GUI started and background services initialized.")
+        self.footer_var.set(f"GUI started. Active tool provider: {active_provider}")
         if not result["backend_reachable"]:
             messagebox.showwarning("Backend Offline", f"The backend is not reachable at {result['backend_url']}. Settings still save immediately.")
 
@@ -295,9 +308,10 @@ class AgentDesktopGUI(tk.Tk):
         settings = self.controller.get_settings()
         goal_text = status.get("goal") or self.controller.get_current_goal() or "(no goal set)"
         flags = status.get("health_flags", [])
+        provider = status.get("tool_provider", settings["ACTIVE_TOOL_PROVIDER"])
         self.metric_vars["backend"].set("online" if status.get("backend_reachable") else "offline")
         self.metric_vars["model"].set(settings["MODEL_NAME"])
-        self.metric_vars["runtime"].set(status.get("runtime_status", "unknown"))
+        self.metric_vars["runtime"].set(f"{status.get('runtime_status', 'unknown')} | provider {provider}")
         self.metric_vars["goal"].set(goal_text)
         self.metric_vars["queue"].set(f"pending {status.get('pending_task_count', 0)} | done {status.get('completed_task_count', 0)} | failed {status.get('failed_task_count', 0)}")
         self.metric_vars["cpu"].set(f"{status.get('cpu_percent')}%")
@@ -308,7 +322,7 @@ class AgentDesktopGUI(tk.Tk):
         self.metric_vars["flags"].set(", ".join(flags) if flags else "healthy")
         self.monitor_state_var.set(f"Monitor: {'running' if self.controller.is_monitoring() else 'stopped'}")
         self.summary_var.set(status.get("summary", "System ready"))
-        self.footer_var.set(f"Refresh interval: {settings['GUI_REFRESH_MS']} ms")
+        self.footer_var.set(f"Refresh interval: {settings['GUI_REFRESH_MS']} ms | tool provider: {provider}")
         self._set_text_widget(self.screen_text, status.get("last_screen_description", "No screen description available yet."))
         self._set_text_widget(
             self.health_text,
@@ -317,6 +331,7 @@ class AgentDesktopGUI(tk.Tk):
                 f"Backend reachable: {status.get('backend_reachable', False)}",
                 f"Model loaded: {status.get('model_loaded', False)}",
                 f"Runtime running: {status.get('runtime_running', False)}",
+                f"Active tool provider: {provider}",
                 f"Flags: {', '.join(flags) if flags else 'none'}",
                 f"Refresh interval: {settings['GUI_REFRESH_MS']} ms",
             ]),
@@ -332,6 +347,7 @@ class AgentDesktopGUI(tk.Tk):
                 f"Session ID: {snapshot.get('session_id', '')}",
                 f"Goal: {snapshot.get('goal', '')}",
                 f"Status: {snapshot.get('status', '')}",
+                f"Tool Provider: {snapshot.get('tool_provider', '')}",
                 f"Active Model: {snapshot.get('active_model', '')}",
                 f"Planner Model: {snapshot.get('planner_model', '')}",
                 f"Executor Model: {snapshot.get('executor_model', '')}",
@@ -413,7 +429,7 @@ class AgentDesktopGUI(tk.Tk):
     def _handle_warmup_result(self, result: dict) -> None:
         if result["backend_reachable"]:
             self.summary_var.set(f"Warmup {'ok' if result['warmup_ok'] else 'incomplete'} for {result['model_name']}")
-            self.footer_var.set("Model warmup completed.")
+            self.footer_var.set(f"Model warmup completed. Provider: {result.get('tool_provider', 'unknown')}")
         else:
             self.summary_var.set("Warmup failed because backend is offline.")
             self.footer_var.set("Warmup could not run because backend is offline.")

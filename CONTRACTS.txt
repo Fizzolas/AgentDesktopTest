@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 11:27 EST
+# Last updated: 2026-03-08 11:35 EST
 
 config.py -> exports (variables/functions):
   MODEL_NAME: str
@@ -12,6 +12,14 @@ config.py -> exports (variables/functions):
   OLLAMA_NUM_GPU: int
   GUI_REFRESH_MS: int
   START_MONITOR_ON_GUI: bool
+  AUTO_INSTALL_DEPENDENCIES: bool
+  AUTO_INSTALL_OPEN_INTERPRETER: bool
+  AUTO_INSTALL_AGENTS2_S3: bool
+  ENABLE_OPEN_INTERPRETER_TOOLS: bool
+  ENABLE_AGENTS2_S3_TOOLS: bool
+  ACTIVE_TOOL_PROVIDER: str
+  AGENTS2_S3_PIP_PACKAGE: str
+  AGENTS2_S3_MODULE: str
   load_runtime_settings() -> dict
   save_runtime_settings(settings: dict) -> dict
   get_runtime_settings() -> dict
@@ -20,11 +28,16 @@ config.py -> exports (variables/functions):
   update_screen_region_value(field: str, value: int) -> dict
   reset_runtime_settings() -> dict
 
+bootstrap.py -> exports:
+  ProviderStatus : dataclass
+  ensure_runtime_dependencies() -> dict
+
 runtime_controller.py -> exports:
   RuntimeController : dataclass
     methods:
       get_banner_info() -> dict
       get_settings() -> dict
+      get_dependency_status() -> dict
       startup() -> dict
       apply_all_startup_services() -> dict
       warmup_current_model() -> dict
@@ -51,6 +64,12 @@ runtime_controller.py -> exports:
 gui_app.py -> exports:
   AgentDesktopGUI : tkinter.Tk
   main() -> None
+
+agent_loop.py -> exports:
+  run(goal: str) -> None
+  step(goal: str, screen_state: dict | ScreenState) -> str
+  stop() -> None
+  get_session_snapshot() -> dict
 
 main.py -> exports:
   main() -> None

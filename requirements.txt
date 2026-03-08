@@ -1,0 +1,6 @@
+requests
+psutil
+pillow
+pyautogui
+open-interpreter
+agents2-s3
