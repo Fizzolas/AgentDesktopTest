@@ -2,7 +2,7 @@
 
 ## CURRENT STATE
 - Branch: fix/runtime-baseline-01
-- Phase: Open Interpreter importability + pkg_resources compatibility pass complete
+- Phase: GUI/provider clarity + dependency-status caching pass complete
 - GUI: main.py launches the Tk desktop GUI by default; shell_main.py is fallback if GUI import/launch fails
 - Python baseline: main.py targets Python 3.11 specifically, probes for it, rebuilds `.venv` with it when needed, and refuses to silently continue on an unsupported interpreter
 - Venv bootstrap: main.py auto-creates `.venv`, relaunches itself inside that environment, installs base requirements into it, verifies core runtime imports, and then runs provider bootstrap there
@@ -10,19 +10,28 @@
 - Failure visibility: startup prints captured stdout/stderr for install steps and pauses on startup failure so the console does not disappear before the error can be read
 - Core dependency verification: bootstrap checks real import targets used by the app and auto-installs any missing packages before GUI import
 - Provider bootstrap: provider readiness now verifies importability, not just package presence, so Open Interpreter is no longer marked ready when its import chain is broken
+- Dependency-status caching: repeated GUI/monitor refreshes now reuse cached provider readiness state instead of re-running bootstrap probes every refresh cycle
 - Requests compatibility: bootstrap repairs the requests stack when an incompatible chardet major version is introduced by downstream installs
 - Vision runtime: EasyOCR reader initialization is lazy and falls back to CPU mode if GPU initialization is unavailable or incompatible
 - Agent-S mapping: repo install target is `git+https://github.com/simular-ai/Agent-S.git` and the tracked import module is `gui_agents.s3`
 - Settings: persisted to agent_settings.json and applied immediately across runtime/model-facing modules
 - Startup: GUI boot initializes bootstrap checks, controller services, provider readiness, backend warmup, and monitor services automatically when enabled
-- Tool providers: both open_interpreter and agents2_s3 have persisted enable flags, auto-install flags, active-provider selection, and startup readiness checks
+- Tool providers: both open_interpreter and agents2_s3 have persisted enable flags, auto-install flags, preferred-provider selection, and startup readiness checks
 - Routing: task execution distinguishes planner-only tasks from executable command tasks, with automatic route selection metadata and safe execution fallback behavior
 - Vision: screen capture is adaptive so visual capture is requested only for observe/verify or explicitly visual work; cached state is reused for non-visual tasks
-- Surfaces: GUI, monitor, shell fallback, and docs now all expose provider, route, and vision-efficiency state consistently
+- Surfaces: GUI, monitor, shell fallback, and docs now all expose provider, route, preferred-provider, enabled-tool, and available-tool state consistently
 - Shutdown: controller shutdown stops runtime + monitor cleanly
 - Goal: real application behavior instead of a loose collection of scripts
 
 ## CHANGELOG
+### [2026-03-08 12:38 EST] — GUI Provider Clarity + Dependency Cache Pass
+- Added caching to bootstrap provider-status checks so repeated GUI and monitor refreshes do not keep re-running full dependency probes and spamming the console
+- Updated runtime_controller.py so dependency refresh is forced only when tool-related settings change, not on every ordinary GUI setting update or warmup call
+- Updated runtime_controller.py to expose preferred provider, enabled tools, and available tools alongside the active provider in dashboard and runtime payloads
+- Updated gui_app.py to show Agent-S by name throughout the GUI instead of only the internal `agents2_s3` label
+- Updated gui_app.py to relabel the single-provider selector as Preferred Tool Provider and surface enabled + available tools together in header, dashboard, run view, and settings
+- Added GUI tool presets for Enable Both, Open Interpreter Only, and Agent-S Only so multi-tool configuration is obvious instead of hidden behind separate toggles
+
 ### [2026-03-08 12:29 EST] — Open Interpreter Importability + pkg_resources Compatibility Pass
 - Added `setuptools>=68,<81` to requirements.txt so pkg_resources remains available for the current Open Interpreter import path
 - Updated main.py packaging-tool bootstrap to stop upgrading setuptools past the compatible range during environment preparation

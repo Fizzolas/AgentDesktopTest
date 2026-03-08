@@ -8,6 +8,12 @@ from tkinter.scrolledtext import ScrolledText
 from runtime_controller import build_runtime_controller
 
 
+TOOL_LABELS = {
+    "open_interpreter": "Open Interpreter",
+    "agents2_s3": "Agent-S",
+}
+
+
 class AgentDesktopGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -36,6 +42,7 @@ class AgentDesktopGUI(tk.Tk):
         self.settings_status_var = tk.StringVar(value="Settings save and apply automatically.")
         self.monitor_state_var = tk.StringVar(value="Monitor: unknown")
         self.footer_var = tk.StringVar(value="Ready")
+        self.tool_summary_var = tk.StringVar(value="Tool provider status is loading...")
         self.metric_vars = {k: tk.StringVar(value="--") for k in ["backend", "model", "runtime", "goal", "queue", "cpu", "ram", "gpu", "flags"]}
 
         self.setting_vars: dict[str, tk.Variable] = {}
@@ -66,6 +73,25 @@ class AgentDesktopGUI(tk.Tk):
         style.configure("Treeview", background=self._colors["panel_alt"], fieldbackground=self._colors["panel_alt"], foreground=self._colors["text"])
         style.configure("Treeview.Heading", background=self._colors["panel"], foreground=self._colors["text"])
 
+    def _tool_label(self, name: str) -> str:
+        return TOOL_LABELS.get(name, name)
+
+    def _format_tool_list(self, names: list[str] | tuple[str, ...] | None) -> str:
+        values = [self._tool_label(name) for name in (names or [])]
+        return ", ".join(values) if values else "(none)"
+
+    def _refresh_tool_summary(self, payload: dict | None = None) -> None:
+        settings = self.controller.get_settings()
+        dependency_status = (payload or {}).get("dependency_status") or self.controller.get_dependency_status()
+        providers = dependency_status.get("providers", {})
+        enabled_tools = (payload or {}).get("enabled_tools") or [name for name, provider in providers.items() if provider.get("enabled")]
+        available_tools = (payload or {}).get("available_tools") or [name for name, provider in providers.items() if provider.get("enabled") and provider.get("installed")]
+        preferred_provider = (payload or {}).get("preferred_tool_provider") or dependency_status.get("preferred_provider", settings["ACTIVE_TOOL_PROVIDER"])
+        active_provider = (payload or {}).get("tool_provider") or dependency_status.get("active_provider", settings["ACTIVE_TOOL_PROVIDER"])
+        self.tool_summary_var.set(
+            f"Enabled together: {self._format_tool_list(enabled_tools)} | Available now: {self._format_tool_list(available_tools)} | Preferred: {self._tool_label(preferred_provider)} | Active: {self._tool_label(active_provider)}"
+        )
+
     def _build_layout(self) -> None:
         root = ttk.Frame(self, style="App.TFrame", padding=16)
         root.pack(fill="both", expand=True)
@@ -79,9 +105,10 @@ class AgentDesktopGUI(tk.Tk):
         ttk.Label(header, text="AgentDesktopTest", style="Title.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(header, text="Controller-backed desktop UI with live settings and health status.", style="Sub.TLabel").grid(row=1, column=0, sticky="w")
         ttk.Label(header, textvariable=self.summary_var, style="Sub.TLabel").grid(row=2, column=0, sticky="w")
+        ttk.Label(header, textvariable=self.tool_summary_var, style="Sub.TLabel").grid(row=3, column=0, sticky="w")
 
         action_bar = ttk.Frame(header, style="App.TFrame")
-        action_bar.grid(row=0, column=1, rowspan=3, sticky="e")
+        action_bar.grid(row=0, column=1, rowspan=4, sticky="e")
         ttk.Button(action_bar, text="Run Goal", command=self._run_goal_from_editor).grid(row=0, column=0, padx=4)
         ttk.Button(action_bar, text="Stop", command=self._stop_runtime).grid(row=0, column=1, padx=4)
         ttk.Button(action_bar, text="Refresh", command=self._refresh_all).grid(row=0, column=2, padx=4)
@@ -229,13 +256,21 @@ class AgentDesktopGUI(tk.Tk):
         self._add_toggle_setting(app_frame, 1, "START_MONITOR_ON_GUI", "Run Monitor With GUI")
         self._add_toggle_setting(app_frame, 2, "AUTO_INSTALL_DEPENDENCIES", "Auto Install Missing Dependencies")
 
-        self._add_text_setting(tools_frame, 0, "ACTIVE_TOOL_PROVIDER", "Active Tool Provider", combo_values=["open_interpreter", "agents2_s3"])
-        self._add_toggle_setting(tools_frame, 1, "ENABLE_OPEN_INTERPRETER_TOOLS", "Enable Open Interpreter Tools")
-        self._add_toggle_setting(tools_frame, 2, "ENABLE_AGENTS2_S3_TOOLS", "Enable agents2-s3 Tools")
-        self._add_toggle_setting(tools_frame, 3, "AUTO_INSTALL_OPEN_INTERPRETER", "Auto Install Open Interpreter")
-        self._add_toggle_setting(tools_frame, 4, "AUTO_INSTALL_AGENTS2_S3", "Auto Install agents2-s3")
-        self._add_text_setting(tools_frame, 5, "AGENTS2_S3_PIP_PACKAGE", "agents2-s3 Pip Package")
-        self._add_text_setting(tools_frame, 6, "AGENTS2_S3_MODULE", "agents2-s3 Module Name")
+        ttk.Label(tools_frame, textvariable=self.tool_summary_var, style="Sub.TLabel", wraplength=1000, justify="left").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        presets = ttk.Frame(tools_frame, style="Panel.TFrame")
+        presets.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Button(presets, text="Enable Both", command=lambda: self._apply_tool_preset("both")).pack(side="left", padx=(0, 6))
+        ttk.Button(presets, text="Open Interpreter Only", command=lambda: self._apply_tool_preset("open_only")).pack(side="left", padx=6)
+        ttk.Button(presets, text="Agent-S Only", command=lambda: self._apply_tool_preset("agent_only")).pack(side="left", padx=6)
+
+        self._add_text_setting(tools_frame, 2, "ACTIVE_TOOL_PROVIDER", "Preferred Tool Provider", combo_values=["open_interpreter", "agents2_s3"])
+        self._add_toggle_setting(tools_frame, 3, "ENABLE_OPEN_INTERPRETER_TOOLS", "Enable Open Interpreter Tools")
+        self._add_toggle_setting(tools_frame, 4, "ENABLE_AGENTS2_S3_TOOLS", "Enable Agent-S Tools")
+        self._add_toggle_setting(tools_frame, 5, "AUTO_INSTALL_OPEN_INTERPRETER", "Auto Install Open Interpreter")
+        self._add_toggle_setting(tools_frame, 6, "AUTO_INSTALL_AGENTS2_S3", "Auto Install Agent-S")
+        self._add_text_setting(tools_frame, 7, "AGENTS2_S3_PIP_PACKAGE", "Agent-S Pip Package")
+        self._add_text_setting(tools_frame, 8, "AGENTS2_S3_MODULE", "Agent-S Module Name")
 
     def _set_text_widget(self, widget: ScrolledText, content: str) -> None:
         widget.configure(state="normal")
@@ -288,16 +323,52 @@ class AgentDesktopGUI(tk.Tk):
         finally:
             self._suspend_setting_events = False
         self.settings_status_var.set("Loaded saved settings.")
+        self._refresh_tool_summary()
+
+    def _apply_tool_preset(self, preset: str) -> None:
+        updates = {
+            "both": {
+                "ENABLE_OPEN_INTERPRETER_TOOLS": True,
+                "ENABLE_AGENTS2_S3_TOOLS": True,
+            },
+            "open_only": {
+                "ENABLE_OPEN_INTERPRETER_TOOLS": True,
+                "ENABLE_AGENTS2_S3_TOOLS": False,
+                "ACTIVE_TOOL_PROVIDER": "open_interpreter",
+            },
+            "agent_only": {
+                "ENABLE_OPEN_INTERPRETER_TOOLS": False,
+                "ENABLE_AGENTS2_S3_TOOLS": True,
+                "ACTIVE_TOOL_PROVIDER": "agents2_s3",
+            },
+        }.get(preset)
+        if not updates:
+            return
+        try:
+            for key, value in updates.items():
+                self.controller.update_setting(key, value)
+            if preset == "both" and self.controller.get_settings().get("ACTIVE_TOOL_PROVIDER") not in {"open_interpreter", "agents2_s3"}:
+                self.controller.update_setting("ACTIVE_TOOL_PROVIDER", "open_interpreter")
+            self._load_settings_into_form()
+            self.settings_status_var.set(f"Applied tool preset: {preset}")
+            self._refresh_all()
+        except Exception as e:
+            self.settings_status_var.set(f"Could not apply tool preset {preset}: {e}")
 
     def _startup_runtime_services(self) -> None:
         result = self.controller.apply_all_startup_services()
-        deps = result.get("dependency_status", {})
-        active_provider = deps.get("active_provider", result.get("tool_provider", "unknown"))
+        active_provider = result.get("tool_provider", "unknown")
+        preferred_provider = result.get("preferred_tool_provider", active_provider)
+        enabled_tools = self._format_tool_list(result.get("enabled_tools", []))
+        available_tools = self._format_tool_list(result.get("available_tools", []))
         self.monitor_state_var.set(f"Monitor: {'running' if result.get('monitoring') else 'stopped'}")
         self.summary_var.set(
-            f"Backend {'ready' if result['backend_reachable'] else 'offline'} at {result['backend_url']} | model {result['model_name']} | provider {active_provider} | auto-route={'on' if result.get('auto_tool_selection') else 'off'} | adaptive-vision={'on' if result.get('adaptive_vision') else 'off'}"
+            f"Backend {'ready' if result['backend_reachable'] else 'offline'} at {result['backend_url']} | model {result['model_name']} | preferred {self._tool_label(preferred_provider)} | active {self._tool_label(active_provider)} | enabled {enabled_tools} | available {available_tools}"
         )
-        self.footer_var.set(f"GUI started. Active tool provider: {active_provider}")
+        self.footer_var.set(
+            f"GUI started. Active tool: {self._tool_label(active_provider)} | enabled: {enabled_tools} | auto-route: {'on' if result.get('auto_tool_selection') else 'off'}"
+        )
+        self._refresh_tool_summary(result)
         if not result["backend_reachable"]:
             messagebox.showwarning("Backend Offline", f"The backend is not reachable at {result['backend_url']}. Settings still save immediately.")
 
@@ -310,11 +381,16 @@ class AgentDesktopGUI(tk.Tk):
         settings = self.controller.get_settings()
         goal_text = status.get("goal") or self.controller.get_current_goal() or "(no goal set)"
         flags = status.get("health_flags", [])
-        provider = status.get("tool_provider", settings["ACTIVE_TOOL_PROVIDER"])
+        active_provider = status.get("tool_provider", settings["ACTIVE_TOOL_PROVIDER"])
+        preferred_provider = status.get("preferred_tool_provider", settings["ACTIVE_TOOL_PROVIDER"])
+        enabled_tools = status.get("enabled_tools", [])
+        available_tools = status.get("available_tools", [])
         route = status.get("last_route", "") or "(none)"
         self.metric_vars["backend"].set("online" if status.get("backend_reachable") else "offline")
         self.metric_vars["model"].set(settings["MODEL_NAME"])
-        self.metric_vars["runtime"].set(f"{status.get('runtime_status', 'unknown')} | {provider} | {route}")
+        self.metric_vars["runtime"].set(
+            f"{status.get('runtime_status', 'unknown')} | active {self._tool_label(active_provider)} | enabled {self._format_tool_list(enabled_tools)}"
+        )
         self.metric_vars["goal"].set(goal_text)
         self.metric_vars["queue"].set(f"pending {status.get('pending_task_count', 0)} | done {status.get('completed_task_count', 0)} | failed {status.get('failed_task_count', 0)}")
         self.metric_vars["cpu"].set(f"{status.get('cpu_percent')}%")
@@ -326,8 +402,9 @@ class AgentDesktopGUI(tk.Tk):
         self.monitor_state_var.set(f"Monitor: {'running' if self.controller.is_monitoring() else 'stopped'}")
         self.summary_var.set(status.get("summary", "System ready"))
         self.footer_var.set(
-            f"Refresh interval: {settings['GUI_REFRESH_MS']} ms | provider: {provider} | auto-route: {'on' if settings['AUTO_TOOL_SELECTION'] else 'off'} | adaptive-vision: {'on' if settings['ADAPTIVE_VISION'] else 'off'}"
+            f"Refresh interval: {settings['GUI_REFRESH_MS']} ms | preferred: {self._tool_label(preferred_provider)} | active: {self._tool_label(active_provider)} | available: {self._format_tool_list(available_tools)}"
         )
+        self._refresh_tool_summary(status)
         self._set_text_widget(self.screen_text, status.get("last_screen_description", "No screen description available yet."))
         self._set_text_widget(
             self.health_text,
@@ -336,8 +413,11 @@ class AgentDesktopGUI(tk.Tk):
                 f"Backend reachable: {status.get('backend_reachable', False)}",
                 f"Model loaded: {status.get('model_loaded', False)}",
                 f"Runtime running: {status.get('runtime_running', False)}",
-                f"Active tool provider: {provider}",
-                f"Last route: {status.get('last_route', '')}",
+                f"Preferred provider: {self._tool_label(preferred_provider)}",
+                f"Active provider: {self._tool_label(active_provider)}",
+                f"Enabled tools: {self._format_tool_list(enabled_tools)}",
+                f"Available tools: {self._format_tool_list(available_tools)}",
+                f"Last route: {route}",
                 f"Route reason: {status.get('last_route_reason', '')}",
                 f"Vision reason: {status.get('last_vision_reason', '')}",
                 f"Auto tool selection: {settings['AUTO_TOOL_SELECTION']}",
@@ -349,6 +429,11 @@ class AgentDesktopGUI(tk.Tk):
 
     def _refresh_runtime_panels(self) -> None:
         snapshot = self.controller.get_runtime_snapshot()
+        preferred_provider = snapshot.get("preferred_tool_provider", "")
+        active_provider = snapshot.get("tool_provider", "")
+        enabled_tools = snapshot.get("enabled_tools", [])
+        available_tools = snapshot.get("available_tools", [])
+        self._refresh_tool_summary(snapshot)
         self._set_text_widget(
             self.session_text,
             "\n".join([
@@ -357,7 +442,10 @@ class AgentDesktopGUI(tk.Tk):
                 f"Session ID: {snapshot.get('session_id', '')}",
                 f"Goal: {snapshot.get('goal', '')}",
                 f"Status: {snapshot.get('status', '')}",
-                f"Tool Provider: {snapshot.get('tool_provider', '')}",
+                f"Preferred Provider: {self._tool_label(preferred_provider)}",
+                f"Active Provider: {self._tool_label(active_provider)}",
+                f"Enabled Tools: {self._format_tool_list(enabled_tools)}",
+                f"Available Tools: {self._format_tool_list(available_tools)}",
                 f"Last Route: {snapshot.get('last_route', '')}",
                 f"Route Reason: {snapshot.get('last_route_reason', '')}",
                 f"Vision Reason: {snapshot.get('last_vision_reason', '')}",
@@ -442,10 +530,13 @@ class AgentDesktopGUI(tk.Tk):
     def _handle_warmup_result(self, result: dict) -> None:
         if result["backend_reachable"]:
             self.summary_var.set(f"Warmup {'ok' if result['warmup_ok'] else 'incomplete'} for {result['model_name']}")
-            self.footer_var.set(f"Model warmup completed. Provider: {result.get('tool_provider', 'unknown')}")
+            self.footer_var.set(
+                f"Model warmup completed. Active: {self._tool_label(result.get('tool_provider', 'unknown'))} | available: {self._format_tool_list(result.get('available_tools', []))}"
+            )
         else:
             self.summary_var.set("Warmup failed because backend is offline.")
             self.footer_var.set("Warmup could not run because backend is offline.")
+        self._refresh_tool_summary(result)
         self._refresh_all()
 
     def _schedule_setting_job(self, key: str, callback) -> None:

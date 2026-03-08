@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import importlib.metadata
 import importlib.util
 import subprocess
@@ -67,6 +68,8 @@ CORE_DEPENDENCIES = {
     "easyocr": DependencyStatus(module_name="easyocr", pip_package="easyocr>=1.7,<2", installed=False),
     "pkg_resources": DependencyStatus(module_name="pkg_resources", pip_package="setuptools>=68,<81", installed=False),
 }
+
+_DEPENDENCY_STATUS_CACHE: dict[str, object] = {"key": None, "status": None}
 
 
 
@@ -183,6 +186,22 @@ def _provider_ready(provider_name: str, module_name: str) -> tuple[bool, str]:
 
 
 
+def _dependency_cache_key(settings: dict) -> tuple:
+    return (
+        _python_label(),
+        _python_version_label(),
+        settings.get("ACTIVE_TOOL_PROVIDER"),
+        settings.get("AUTO_INSTALL_DEPENDENCIES"),
+        settings.get("AUTO_INSTALL_OPEN_INTERPRETER"),
+        settings.get("AUTO_INSTALL_AGENTS2_S3"),
+        settings.get("ENABLE_OPEN_INTERPRETER_TOOLS"),
+        settings.get("ENABLE_AGENTS2_S3_TOOLS"),
+        settings.get("AGENTS2_S3_PIP_PACKAGE"),
+        settings.get("AGENTS2_S3_MODULE"),
+    )
+
+
+
 def ensure_core_runtime_dependencies() -> dict:
     print(f"[bootstrap] Verifying core runtime dependencies in {_python_label()} ...", flush=True)
     dependencies = {}
@@ -220,8 +239,13 @@ def ensure_core_runtime_dependencies() -> dict:
 
 
 
-def ensure_runtime_dependencies() -> dict:
+def ensure_runtime_dependencies(force_refresh: bool = False) -> dict:
     settings = get_runtime_settings()
+    cache_key = _dependency_cache_key(settings)
+    cached_status = _DEPENDENCY_STATUS_CACHE.get("status")
+    if not force_refresh and _DEPENDENCY_STATUS_CACHE.get("key") == cache_key and isinstance(cached_status, dict):
+        return deepcopy(cached_status)
+
     auto_install_all = settings["AUTO_INSTALL_DEPENDENCIES"]
 
     open_interpreter_installed, open_interpreter_error = _provider_ready("open_interpreter", "interpreter")
@@ -304,11 +328,17 @@ def ensure_runtime_dependencies() -> dict:
             fallback_applied = previous_active != active
             selected = fallback
 
+    enabled_tools = [name for name, provider in providers.items() if provider.enabled]
+    available_tools = [name for name, provider in providers.items() if provider.enabled and provider.installed]
+
     status = {
         "requested_provider": settings["ACTIVE_TOOL_PROVIDER"],
+        "preferred_provider": settings["ACTIVE_TOOL_PROVIDER"],
         "active_provider": active,
         "fallback_applied": fallback_applied,
         "providers": {name: provider.to_dict() for name, provider in providers.items()},
+        "enabled_tools": enabled_tools,
+        "available_tools": available_tools,
         "ready": selected.enabled and selected.installed and repair_ok,
         "python_executable": _python_label(),
         "python_version": _python_version_label(),
@@ -320,4 +350,7 @@ def ensure_runtime_dependencies() -> dict:
         f"active={status['active_provider']} ready={status['ready']}",
         flush=True,
     )
-    return status
+
+    _DEPENDENCY_STATUS_CACHE["key"] = cache_key
+    _DEPENDENCY_STATUS_CACHE["status"] = deepcopy(status)
+    return deepcopy(status)
