@@ -62,6 +62,7 @@ CORE_DEPENDENCIES = {
     "PIL": DependencyStatus(module_name="PIL", pip_package="pillow>=12,<13", installed=False),
     "pyautogui": DependencyStatus(module_name="pyautogui", pip_package="pyautogui>=0.9.54,<1", installed=False),
     "numpy": DependencyStatus(module_name="numpy", pip_package="numpy>=2,<3", installed=False),
+    "mss": DependencyStatus(module_name="mss", pip_package="mss>=9,<11", installed=False),
     "cv2": DependencyStatus(module_name="cv2", pip_package="opencv-python>=4.10,<5", installed=False),
     "easyocr": DependencyStatus(module_name="easyocr", pip_package="easyocr>=1.7,<2", installed=False),
 }

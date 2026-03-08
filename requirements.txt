@@ -3,5 +3,6 @@ psutil>=7,<8
 pillow>=12,<13
 pyautogui>=0.9.54,<1
 numpy>=2,<3
+mss>=9,<11
 opencv-python>=4.10,<5
 easyocr>=1.7,<2
