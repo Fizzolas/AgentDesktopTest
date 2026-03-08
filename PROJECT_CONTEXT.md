@@ -7,7 +7,7 @@
 
 ## CURRENT STATE (always reflects latest entry)
 
-- **Agent Framework:** Open Interpreter (via Ollama backend) with typed session/queue scaffold now active under the legacy loop
+- **Agent Framework:** Open Interpreter (via Ollama backend) with typed session/queue scaffold active under the legacy loop
 - **Primary Model:** qwen2.5-coder:7b (Q4_K_M) via Ollama | GPU-only with RAM offloading
 - **Fallback Model:** deepseek-r1:8b (Q4_K_M) for heavy reasoning tasks
 - **Memory Strategy:** GPU-only compute, RAM weight offloading enabled, CPU compute blocked
@@ -18,18 +18,18 @@
 - **GitHub:** https://github.com/Fizzolas/AgentDesktopTest (public)
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
 - **Current refactor branch:** fix/runtime-baseline-01
-- **Baseline refactor phase:** Phase 3 complete — active loop now stores typed SessionState and internal AgentTask queue
+- **Baseline refactor phase:** Phase 4 complete — vision now has typed ScreenState output with stable element IDs and frame metadata
 - **config.py:** Complete — 8 constants (added BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU) (2026-03-01 19:20 EST)
 - **runtime_models.py:** Complete — shared dataclasses/enums/helpers for queue-based runtime (2026-03-08 10:07 EST)
 - **model_adapter.py:** Complete — backend adapter boundary for model-agnostic runtime migration (2026-03-08 10:32 EST)
 - **screen_capture.py:** Complete — capture_screen() implemented (2026-03-01 18:32 EST)
 - **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented; typed query_model_reply() added (2026-03-08 10:32 EST)
-- **vision.py:** Complete — analyze_frame(), get_screen_state() implemented, EasyOCR gpu=True (2026-03-01 18:45 EST)
+- **vision.py:** Complete — legacy dict path preserved; new typed analyze_frame_typed() and get_screen_state_typed() return ScreenState with ScreenElement metadata (2026-03-08 11:00 EST)
 - **agent_loop.py:** Complete — run(), step(), stop() still active; now also manages typed session state, queue seeding, and live session snapshots (2026-03-08 10:50 EST)
 - **main.py:** Complete — main() implemented (2026-03-01 18:59 EST)
 - **monitor.py:** Complete — system health monitoring with rolling log (2026-03-01 19:29 EST)
 - **Remaining empty shells:** NONE — all files complete
-- **Next migration target:** vision.py should emit typed ScreenState directly and begin supporting richer frame-to-frame UI memory
+- **Next migration target:** main.py and/or a new runtime shell should expose queue inspection, session snapshot viewing, and future live control hooks
 
 ---
 
@@ -68,7 +68,7 @@
 | agent_loop.py | Core goal loop with typed session state, internal queue scaffolding, and Open Interpreter execution | **Complete** |
 | runtime_models.py | Shared typed runtime layer for queue tasks, model replies, tool results, and session state | **Complete** |
 | model_adapter.py | Stable backend boundary for future multi-runtime model support | **Complete** |
-| vision.py | Vision pipeline. Screen frame analysis, still returning legacy dict state | **Complete** |
+| vision.py | Vision pipeline with both legacy dict output and typed ScreenState output | **Complete** |
 | screen_capture.py | Raw screen capture. Returns np.ndarray via mss | **Complete** |
 | ollama_client.py | Ollama API interface. query_model(), query_model_reply(), load_model(), check_ollama_running() | **Complete** |
 | config.py | Global constants. MODEL_NAME, OLLAMA_URL, SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU | **Complete** |
@@ -104,7 +104,7 @@ agent_loop.py
            typing (stdlib)
 
 vision.py
-  imports: screen_capture.py, cv2, easyocr, numpy
+  imports: screen_capture.py, runtime_models.py, cv2, easyocr, numpy, hashlib, time
 
 screen_capture.py
   imports: mss (installed), numpy (installed)
@@ -132,9 +132,10 @@ config.py
 - screen_capture.py MUST return np.ndarray BGR (3-channel, uint8). vision.py depends on this type. Do not swap to PIL.Image or return BGRA.
 - mss returns BGRA by default — the [:, :, :3] alpha strip in capture_screen() is intentional. Do not remove it.
 - ollama_client.query_model() remains the legacy plain-string wrapper. Prefer query_model_reply() or model_adapter.py for new runtime code.
-- vision._reader is initialized ONCE at module load (easyocr.Reader with gpu=True). Do NOT move it inside analyze_frame() — it would re-init the GPU model on every call.
-- vision.analyze_frame() expects BGR np.ndarray input. Passing BGRA or PIL.Image will break the cv2 and EasyOCR pipeline.
-- vision return dict keys are exactly: "description", "elements", "text". agent_loop.py now normalizes them into ScreenState, but raw legacy keys still must remain stable until vision migration is complete.
+- vision._reader is initialized ONCE at module load (easyocr.Reader with gpu=True). Do NOT move it inside analyze_frame_typed() — it would re-init the GPU model on every call.
+- vision.analyze_frame_typed() expects BGR np.ndarray input. Passing BGRA or PIL.Image will break the cv2 and EasyOCR pipeline.
+- vision.get_screen_state() still returns the legacy dict keys exactly: "description", "elements", "text". Do not break that wrapper while legacy callers remain.
+- vision.get_screen_state_typed() is now the preferred typed path for future runtime code.
 - agent_loop interpreter is configured at module load. Do NOT re-configure in main.py or any other file until bootstrap extraction is implemented.
 - GOAL_COMPLETE is still the completion signal string. The internal task queue now exists, but explicit task-state completion has not fully replaced this string yet.
 - agent_loop._active_session stores the live typed SessionState; get_session_snapshot() exposes a serializable debug view.
@@ -179,6 +180,14 @@ config.py
 ---
 
 ## CHANGELOG
+
+### [2026-03-08 11:00 EST] — Baseline Refactor Phase 4: Typed Vision State Added
+- Refactored vision.py to add analyze_frame_typed() and get_screen_state_typed()
+- Preserved analyze_frame() and get_screen_state() as legacy compatibility wrappers returning dict state
+- Added ScreenElement creation with stable element_id values derived from element type, bbox, and text
+- Added frame metadata to typed ScreenState including dimensions, OCR pipeline info, element counts, and timestamp
+- Established typed vision output as the preferred path for future runtime code while keeping current callers safe
+- Files affected: vision.py, PROJECT_CONTEXT.md, CONTRACTS.txt
 
 ### [2026-03-08 10:50 EST] — Baseline Refactor Phase 3: Typed Session State + Queue Scaffold Activated
 - Refactored agent_loop.py to use typed SessionState and ScreenState under the active runtime

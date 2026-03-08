@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 10:50 EST
+# Last updated: 2026-03-08 11:00 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -74,23 +74,33 @@ screen_capture.py -> exports:
 # =============================================================================
 # vision.py
 # Role: Analyzes screen frames. Returns structured description for the agent.
-# Imports from: screen_capture.py, cv2, easyocr, numpy
-# Status: Complete
-# NOTE: runtime_models.py exists as the future typed baseline, but vision.py still
-#       returns the legacy dict contract until all callers are migrated together.
+# Imports from: screen_capture.py, runtime_models.py, cv2, easyocr, numpy, hashlib, time
+# Status: Complete (Phase 4 baseline refactor: typed screen-state path added)
+# FRAGILE: _reader (easyocr.Reader) is initialized at module load with gpu=True.
+#          analyze_frame_typed() input MUST be BGR np.ndarray.
+#          analyze_frame() and get_screen_state() remain legacy dict wrappers.
+# NOTE: New runtime code should prefer analyze_frame_typed() and get_screen_state_typed().
 # =============================================================================
 
 vision.py -> exports:
   analyze_frame(img: np.ndarray) -> dict
+    # Legacy compatibility wrapper returning {"description", "elements", "text"}.
+
+  analyze_frame_typed(img: np.ndarray, region: dict | None = None) -> ScreenState
+    # New typed analysis path returning ScreenState with ScreenElement entries,
+    # stable element_id values, frame metadata, and capture timestamp.
+
   get_screen_state(region: dict | None = None) -> dict
+    # Legacy compatibility wrapper returning dict state.
+
+  get_screen_state_typed(region: dict | None = None) -> ScreenState
+    # New typed capture + analysis wrapper for queue-based runtime code.
 
 # =============================================================================
 # ollama_client.py
 # Role: Interface to local Ollama model via HTTP API.
 # Imports from: config.py, requests, runtime_models.py
 # Status: Complete
-# NOTE: query_model_reply() is the typed baseline path; query_model() remains the
-#       legacy text wrapper for older callers.
 # =============================================================================
 
 ollama_client.py -> exports:
@@ -110,29 +120,15 @@ ollama_client.py -> exports:
 # Imports from: config.py, model_adapter.py, runtime_models.py, vision.py,
 #               open-interpreter, time (stdlib), os (stdlib), typing (stdlib)
 # Status: Complete (Phase 3 baseline refactor: typed session state + internal queue)
-# FRAGILE: interpreter is still configured at module load — do NOT re-configure in main.py.
-#          GOAL_COMPLETE is still the legacy completion signal until explicit task-state
-#          completion fully replaces it in a later phase.
 # NOTE: The active runtime still executes through Open Interpreter, but now stores
 #       typed SessionState and AgentTask data under the loop.
 # =============================================================================
 
 agent_loop.py -> exports:
   run(goal: str) -> None
-    # Creates a typed SessionState, verifies backend availability through the
-    # default model adapter, then loops until completion/interruption.
-
   step(goal: str, screen_state: dict | ScreenState) -> str
-    # Converts legacy or typed screen input into ScreenState.
-    # Pops the next AgentTask from the internal queue, builds a task-aware prompt,
-    # executes via Open Interpreter, records completion, and seeds follow-up tasks.
-
   get_session_snapshot() -> dict
-    # Returns a lightweight serializable view of the active SessionState,
-    # including queue state, recent completed tasks, metadata, and last screen state.
-
   stop() -> None
-    # Stops the loop, clears interpreter.messages, and marks the active session stopped.
 
 # =============================================================================
 # main.py
@@ -151,7 +147,7 @@ main.py -> exports:
 # runtime_models.py  — Complete (2026-03-08 10:07 EST) — shared typed runtime baseline added
 # model_adapter.py   — Complete (2026-03-08 10:32 EST) — backend adapter baseline added
 # screen_capture.py  — Complete
+# vision.py          — Complete (2026-03-08 11:00 EST) — typed ScreenState path added, legacy dict path preserved
 # ollama_client.py   — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
-# vision.py          — Complete — still returning legacy dict state
 # agent_loop.py      — Complete (2026-03-08 10:50 EST) — typed session and internal task queue scaffold added
 # main.py            — Complete
