@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 11:40 EST
+# Last updated: 2026-03-08 11:44 EST
 
 config.py -> exports (variables/functions):
   MODEL_NAME: str
@@ -66,6 +66,12 @@ runtime_controller.py -> exports:
 gui_app.py -> exports:
   AgentDesktopGUI : tkinter.Tk
   main() -> None
+
+monitor.py -> exports:
+  start_monitoring() -> None
+  stop_monitoring() -> None
+  get_current_status() -> dict
+  get_dashboard_status() -> dict
 
 agent_loop.py -> exports:
   run(goal: str) -> None

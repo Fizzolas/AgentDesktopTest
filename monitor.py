@@ -21,26 +21,20 @@ from pathlib import Path
 
 from config import OLLAMA_URL, MODEL_NAME, DEBUG
 
-# =============================================================================
-# Monitor Configuration
-# =============================================================================
 LOG_FILE = Path("monitor.log")
 MONITOR_INTERVAL = 5.0
 MAX_LOG_SIZE = 10 * 1024 * 1024
 
-# Internal state
 _monitoring = False
 _monitor_thread = None
 
 
 def _get_timestamp() -> str:
-    """Returns formatted timestamp for log entries."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 
 def _rotate_log_if_needed() -> None:
-    """Rotates log file if it exceeds MAX_LOG_SIZE."""
     if LOG_FILE.exists() and LOG_FILE.stat().st_size > MAX_LOG_SIZE:
         backup = LOG_FILE.with_suffix(".log.old")
         if backup.exists():
@@ -51,7 +45,6 @@ def _rotate_log_if_needed() -> None:
 
 
 def _log_message(level: str, message: str, data: dict | None = None) -> None:
-    """Writes a timestamped message to the log file."""
     timestamp = _get_timestamp()
     log_entry = f"[{timestamp}] [{level}] {message}"
     if data:
@@ -66,7 +59,6 @@ def _log_message(level: str, message: str, data: dict | None = None) -> None:
 
 
 def _check_ollama_status() -> dict:
-    """Checks Ollama server health and returns status dict."""
     status = {
         "reachable": False,
         "response_time_ms": None,
@@ -95,7 +87,6 @@ def _check_ollama_status() -> dict:
 
 
 def _check_ollama_model_status() -> dict:
-    """Checks if the target model is loaded in Ollama."""
     status = {
         "model_loaded": False,
         "error": None,
@@ -119,7 +110,6 @@ def _check_ollama_model_status() -> dict:
 
 
 def _get_system_stats() -> dict:
-    """Collects system resource usage stats."""
     try:
         cpu_percent = psutil.cpu_percent(interval=0.5)
 
@@ -147,7 +137,6 @@ def _get_system_stats() -> dict:
 
 
 def _get_gpu_stats() -> dict:
-    """Attempts to get NVIDIA GPU stats via nvidia-smi."""
     try:
         import subprocess
 
@@ -177,7 +166,6 @@ def _get_gpu_stats() -> dict:
 
 
 def _get_python_process_stats() -> dict:
-    """Gets stats for the current Python process."""
     try:
         process = psutil.Process(os.getpid())
         return {
@@ -192,10 +180,6 @@ def _get_python_process_stats() -> dict:
 
 
 def _get_runtime_status() -> dict:
-    """
-    Attempts to retrieve the current typed runtime session snapshot.
-    Lazy import avoids forcing monitor.py to bootstrap the runtime when used standalone.
-    """
     try:
         import agent_loop
 
@@ -212,6 +196,10 @@ def _get_runtime_status() -> dict:
                 "failed_task_count": 0,
                 "last_action": snapshot.get("last_action", ""),
                 "last_screen_description": "",
+                "tool_provider": snapshot.get("tool_provider", ""),
+                "last_route": snapshot.get("last_route", ""),
+                "last_route_reason": snapshot.get("last_route_reason", ""),
+                "last_vision_reason": snapshot.get("last_vision_reason", ""),
             }
 
         last_screen_state = snapshot.get("last_screen_state") or {}
@@ -229,6 +217,10 @@ def _get_runtime_status() -> dict:
             "last_action": snapshot.get("last_action", ""),
             "last_screen_description": last_screen_state.get("description", ""),
             "notes_count": len(snapshot.get("notes", [])),
+            "tool_provider": snapshot.get("tool_provider", ""),
+            "last_route": snapshot.get("last_route", ""),
+            "last_route_reason": snapshot.get("last_route_reason", ""),
+            "last_vision_reason": snapshot.get("last_vision_reason", ""),
         }
     except Exception as e:
         return {
@@ -288,6 +280,9 @@ def _build_status_summary(
 
     if runtime_status.get("running"):
         goal = runtime_status.get("goal", "")
+        route = runtime_status.get("last_route", "")
+        if goal and route:
+            return f"Runtime active on goal: {goal[:80]} | route: {route}"
         if goal:
             return f"Runtime active on goal: {goal[:80]}"
         return "Runtime active"
@@ -313,7 +308,6 @@ def _log_runtime_warnings(runtime_status: dict, flags: list[str]) -> None:
 
 
 def _monitor_loop() -> None:
-    """Main monitoring loop - runs in background thread."""
     global _monitoring
 
     _log_message("INFO", "Monitor started", {"interval_sec": MONITOR_INTERVAL})
@@ -381,7 +375,6 @@ def _monitor_loop() -> None:
 
 
 def start_monitoring() -> None:
-    """Starts the background monitoring thread."""
     global _monitoring, _monitor_thread
 
     if _monitoring:
@@ -397,7 +390,6 @@ def start_monitoring() -> None:
 
 
 def stop_monitoring() -> None:
-    """Stops the background monitoring thread."""
     global _monitoring
 
     if not _monitoring:
@@ -412,7 +404,6 @@ def stop_monitoring() -> None:
 
 
 def get_current_status() -> dict:
-    """Returns full current system + runtime status snapshot (synchronous call)."""
     ollama_status = _check_ollama_status()
     model_status = _check_ollama_model_status()
     system_stats = _get_system_stats()
@@ -444,9 +435,6 @@ def get_current_status() -> dict:
 
 
 def get_dashboard_status() -> dict:
-    """
-    Returns a compact UI-friendly status payload for future shell/GUI surfaces.
-    """
     status = get_current_status()
     runtime_status = status.get("runtime", {})
     system_stats = status.get("system", {})
@@ -465,6 +453,10 @@ def get_dashboard_status() -> dict:
         "completed_task_count": runtime_status.get("completed_task_count", 0),
         "failed_task_count": runtime_status.get("failed_task_count", 0),
         "last_screen_description": runtime_status.get("last_screen_description", ""),
+        "tool_provider": runtime_status.get("tool_provider", ""),
+        "last_route": runtime_status.get("last_route", ""),
+        "last_route_reason": runtime_status.get("last_route_reason", ""),
+        "last_vision_reason": runtime_status.get("last_vision_reason", ""),
         "cpu_percent": system_stats.get("cpu_percent"),
         "ram_percent": system_stats.get("ram_percent"),
         "gpu_utilization_percent": gpu.get("utilization_percent") if gpu.get("available") is not False else None,

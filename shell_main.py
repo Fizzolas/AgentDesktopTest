@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 
 from runtime_controller import build_runtime_controller
@@ -14,7 +15,7 @@ _COMMANDS = {
     "health": "Show compact dashboard health status.",
     "queue": "Show pending queue items from the current session.",
     "notes": "Show recent session notes.",
-    "last": "Show the last action and latest screen summary.",
+    "last": "Show the last action, route, and latest screen summary.",
     "clear": "Clear the currently stored goal.",
     "quit": "Exit the runtime shell.",
 }
@@ -30,6 +31,7 @@ def _print_banner() -> None:
     print(f" Model   : {info['model']}")
     print(f" Backend : {info['backend']}")
     print(f" Debug   : {info['debug']}")
+    print(f" Tools   : provider={info['tool_provider']} | auto-select={info['auto_tool_selection']} | adaptive-vision={info['adaptive_vision']}")
     print(" GUI     : main.py launches the GUI by default")
     print("=" * 68)
 
@@ -43,8 +45,12 @@ def _print_help() -> None:
 
 
 def _startup_check() -> None:
-    print("[shell] Checking backend availability...")
+    print("[shell] Checking backend and providers...")
     result = _controller.startup()
+    deps = result.get("dependency_status", {})
+    print(f"[shell] Provider requested: {deps.get('requested_provider', 'unknown')}")
+    print(f"[shell] Provider active   : {deps.get('active_provider', 'unknown')}")
+    print(f"[shell] Providers ready   : {json.dumps(deps.get('providers', {}), indent=2)}")
     if not result["backend_reachable"]:
         print(
             f"[shell] ERROR: Local model backend is not reachable at {result['backend_url']}.\n"
@@ -65,6 +71,10 @@ def print_runtime_snapshot(snapshot: dict) -> None:
     print(f"  Session ID        : {snapshot.get('session_id', '')}")
     print(f"  Goal              : {snapshot.get('goal', '')}")
     print(f"  Status            : {snapshot.get('status', '')}")
+    print(f"  Tool Provider     : {snapshot.get('tool_provider', '')}")
+    print(f"  Last Route        : {snapshot.get('last_route', '')}")
+    print(f"  Route Reason      : {snapshot.get('last_route_reason', '')}")
+    print(f"  Vision Reason     : {snapshot.get('last_vision_reason', '')}")
     print(f"  Active Model      : {snapshot.get('active_model', '')}")
     print(f"  Pending Tasks     : {snapshot.get('pending_task_count', 0)}")
     print(f"  Completed Tasks   : {snapshot.get('completed_task_count', 0)}")
@@ -108,16 +118,16 @@ def _handle_command(command: str) -> bool:
         print_runtime_snapshot(_controller.get_runtime_snapshot())
         return True
     if lower == "health":
-        print(_controller.get_dashboard_status())
+        print(json.dumps(_controller.get_dashboard_status(), indent=2))
         return True
     if lower == "queue":
-        print(_controller.get_queue_snapshot())
+        print(json.dumps(_controller.get_queue_snapshot(), indent=2))
         return True
     if lower == "notes":
-        print(_controller.get_recent_notes())
+        print(json.dumps(_controller.get_recent_notes(), indent=2))
         return True
     if lower == "last":
-        print(_controller.get_last_result())
+        print(json.dumps(_controller.get_last_result(), indent=2))
         return True
     if raw.startswith("goal "):
         goal = _controller.set_goal(raw[5:])

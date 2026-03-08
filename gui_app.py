@@ -217,6 +217,8 @@ class AgentDesktopGUI(tk.Tk):
         self._add_numeric_setting(runtime_frame, 0, "LOOP_DELAY", "Loop Delay (s)", float, 0.1, 60.0, 0.1)
         self._add_toggle_setting(runtime_frame, 1, "DEBUG", "Debug Logging")
         self._add_toggle_setting(runtime_frame, 2, "BLOCK_CPU_COMPUTE", "Block CPU Compute")
+        self._add_toggle_setting(runtime_frame, 3, "AUTO_TOOL_SELECTION", "Automatic Tool Selection")
+        self._add_toggle_setting(runtime_frame, 4, "ADAPTIVE_VISION", "Adaptive Vision Capture")
 
         self._add_region_setting(region_frame, 0, "top", "Top")
         self._add_region_setting(region_frame, 1, "left", "Left")
@@ -293,7 +295,7 @@ class AgentDesktopGUI(tk.Tk):
         active_provider = deps.get("active_provider", result.get("tool_provider", "unknown"))
         self.monitor_state_var.set(f"Monitor: {'running' if result.get('monitoring') else 'stopped'}")
         self.summary_var.set(
-            f"Backend {'ready' if result['backend_reachable'] else 'offline'} at {result['backend_url']} | model {result['model_name']} | provider {active_provider} | warmup={'ok' if result['warmup_ok'] else 'pending'}"
+            f"Backend {'ready' if result['backend_reachable'] else 'offline'} at {result['backend_url']} | model {result['model_name']} | provider {active_provider} | auto-route={'on' if result.get('auto_tool_selection') else 'off'} | adaptive-vision={'on' if result.get('adaptive_vision') else 'off'}"
         )
         self.footer_var.set(f"GUI started. Active tool provider: {active_provider}")
         if not result["backend_reachable"]:
@@ -309,9 +311,10 @@ class AgentDesktopGUI(tk.Tk):
         goal_text = status.get("goal") or self.controller.get_current_goal() or "(no goal set)"
         flags = status.get("health_flags", [])
         provider = status.get("tool_provider", settings["ACTIVE_TOOL_PROVIDER"])
+        route = status.get("last_route", "") or "(none)"
         self.metric_vars["backend"].set("online" if status.get("backend_reachable") else "offline")
         self.metric_vars["model"].set(settings["MODEL_NAME"])
-        self.metric_vars["runtime"].set(f"{status.get('runtime_status', 'unknown')} | provider {provider}")
+        self.metric_vars["runtime"].set(f"{status.get('runtime_status', 'unknown')} | {provider} | {route}")
         self.metric_vars["goal"].set(goal_text)
         self.metric_vars["queue"].set(f"pending {status.get('pending_task_count', 0)} | done {status.get('completed_task_count', 0)} | failed {status.get('failed_task_count', 0)}")
         self.metric_vars["cpu"].set(f"{status.get('cpu_percent')}%")
@@ -322,7 +325,9 @@ class AgentDesktopGUI(tk.Tk):
         self.metric_vars["flags"].set(", ".join(flags) if flags else "healthy")
         self.monitor_state_var.set(f"Monitor: {'running' if self.controller.is_monitoring() else 'stopped'}")
         self.summary_var.set(status.get("summary", "System ready"))
-        self.footer_var.set(f"Refresh interval: {settings['GUI_REFRESH_MS']} ms | tool provider: {provider}")
+        self.footer_var.set(
+            f"Refresh interval: {settings['GUI_REFRESH_MS']} ms | provider: {provider} | auto-route: {'on' if settings['AUTO_TOOL_SELECTION'] else 'off'} | adaptive-vision: {'on' if settings['ADAPTIVE_VISION'] else 'off'}"
+        )
         self._set_text_widget(self.screen_text, status.get("last_screen_description", "No screen description available yet."))
         self._set_text_widget(
             self.health_text,
@@ -332,6 +337,11 @@ class AgentDesktopGUI(tk.Tk):
                 f"Model loaded: {status.get('model_loaded', False)}",
                 f"Runtime running: {status.get('runtime_running', False)}",
                 f"Active tool provider: {provider}",
+                f"Last route: {status.get('last_route', '')}",
+                f"Route reason: {status.get('last_route_reason', '')}",
+                f"Vision reason: {status.get('last_vision_reason', '')}",
+                f"Auto tool selection: {settings['AUTO_TOOL_SELECTION']}",
+                f"Adaptive vision: {settings['ADAPTIVE_VISION']}",
                 f"Flags: {', '.join(flags) if flags else 'none'}",
                 f"Refresh interval: {settings['GUI_REFRESH_MS']} ms",
             ]),
@@ -348,6 +358,9 @@ class AgentDesktopGUI(tk.Tk):
                 f"Goal: {snapshot.get('goal', '')}",
                 f"Status: {snapshot.get('status', '')}",
                 f"Tool Provider: {snapshot.get('tool_provider', '')}",
+                f"Last Route: {snapshot.get('last_route', '')}",
+                f"Route Reason: {snapshot.get('last_route_reason', '')}",
+                f"Vision Reason: {snapshot.get('last_vision_reason', '')}",
                 f"Active Model: {snapshot.get('active_model', '')}",
                 f"Planner Model: {snapshot.get('planner_model', '')}",
                 f"Executor Model: {snapshot.get('executor_model', '')}",
