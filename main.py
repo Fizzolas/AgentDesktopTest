@@ -265,7 +265,11 @@ def main() -> None:
     _relaunch_in_project_venv()
     _ensure_venv_packages()
 
-    from bootstrap import ensure_runtime_dependencies
+    from bootstrap import ensure_core_runtime_dependencies, ensure_runtime_dependencies
+
+    _print("[main] Verifying core runtime dependencies inside the project virtual environment ...")
+    core_status = ensure_core_runtime_dependencies()
+    _print(f"[main] Core dependency verification complete. ready={core_status.get('ready')}")
 
     _print("[main] Running dependency bootstrap inside the project virtual environment ...")
     dependency_status = ensure_runtime_dependencies()

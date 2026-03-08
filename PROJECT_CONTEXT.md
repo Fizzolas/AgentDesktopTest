@@ -2,13 +2,16 @@
 
 ## CURRENT STATE
 - Branch: fix/runtime-baseline-01
-- Phase: Agent-S repo-backed provider install pass complete
+- Phase: core runtime dependency verification + vision compatibility pass complete
 - GUI: main.py launches the Tk desktop GUI by default; shell_main.py is fallback if GUI import/launch fails
 - Python baseline: main.py targets Python 3.11 specifically, probes for it, rebuilds `.venv` with it when needed, and refuses to silently continue on an unsupported interpreter
-- Venv bootstrap: main.py auto-creates `.venv`, relaunches itself inside that environment, installs base requirements into it, and then runs provider bootstrap there
-- Base deps: requirements.txt contains core app dependencies including numpy so vision.py can import on first startup
+- Venv bootstrap: main.py auto-creates `.venv`, relaunches itself inside that environment, installs base requirements into it, verifies core runtime imports, and then runs provider bootstrap there
+- Base deps: requirements.txt now includes the vision stack used by the app itself, including numpy, opencv-python, and easyocr
 - Failure visibility: startup prints captured stdout/stderr for install steps and pauses on startup failure so the console does not disappear before the error can be read
-- Provider bootstrap: open-interpreter auto-install reports Python-version compatibility clearly, and the Agent-S-backed agents2_s3 provider now defaults to repo-based installation from simular-ai/Agent-S
+- Core dependency verification: bootstrap now checks real import targets used by the app and auto-installs any missing packages before GUI import
+- Provider bootstrap: open-interpreter auto-install reports Python-version compatibility clearly, and the Agent-S-backed agents2_s3 provider defaults to repo-based installation from simular-ai/Agent-S
+- Requests compatibility: bootstrap now repairs the requests stack when an incompatible chardet major version is introduced by downstream installs
+- Vision runtime: EasyOCR reader initialization is now lazy and falls back to CPU mode if GPU initialization is unavailable or incompatible
 - Agent-S mapping: repo install target is `git+https://github.com/simular-ai/Agent-S.git` and the tracked import module is `gui_agents.s3`
 - Settings: persisted to agent_settings.json and applied immediately across runtime/model-facing modules
 - Startup: GUI boot initializes bootstrap checks, controller services, provider readiness, backend warmup, and monitor services automatically when enabled
@@ -20,6 +23,13 @@
 - Goal: real application behavior instead of a loose collection of scripts
 
 ## CHANGELOG
+### [2026-03-08 12:20 EST] — Core Runtime Dependency Verification + Vision Compatibility Pass
+- Updated requirements.txt so the base environment includes the app's actual vision imports: numpy, opencv-python, and easyocr
+- Updated bootstrap.py with core runtime dependency verification that checks and auto-installs real import targets before GUI startup
+- Updated bootstrap.py to repair the requests stack when downstream installs introduce an incompatible chardet major version
+- Updated vision.py so EasyOCR initialization is lazy and can fall back to CPU mode when GPU OCR startup is unavailable
+- Updated main.py so core dependency verification runs before provider bootstrap completes startup handoff to the GUI
+
 ### [2026-03-08 12:09 EST] — Agent-S Repo-Backed Provider Install Pass
 - Confirmed the simular-ai/Agent-S repository contains a Python setup.py package definition with package name `gui-agents`
 - Confirmed the repository exposes an Agent-S console entry point through `gui_agents.s3.cli_app:main`

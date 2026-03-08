@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
 import subprocess
 import sys
@@ -7,6 +8,26 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from config import get_runtime_settings
+
+
+@dataclass
+class DependencyStatus:
+    module_name: str
+    pip_package: str
+    installed: bool
+    install_attempted: bool = False
+    install_succeeded: bool = False
+    error: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "module_name": self.module_name,
+            "pip_package": self.pip_package,
+            "installed": self.installed,
+            "install_attempted": self.install_attempted,
+            "install_succeeded": self.install_succeeded,
+            "error": self.error,
+        }
 
 
 @dataclass
@@ -33,6 +54,17 @@ class ProviderStatus:
             "install_succeeded": self.install_succeeded,
             "error": self.error,
         }
+
+
+CORE_DEPENDENCIES = {
+    "requests": DependencyStatus(module_name="requests", pip_package="requests>=2.32.5,<3", installed=False),
+    "psutil": DependencyStatus(module_name="psutil", pip_package="psutil>=7,<8", installed=False),
+    "PIL": DependencyStatus(module_name="PIL", pip_package="pillow>=12,<13", installed=False),
+    "pyautogui": DependencyStatus(module_name="pyautogui", pip_package="pyautogui>=0.9.54,<1", installed=False),
+    "numpy": DependencyStatus(module_name="numpy", pip_package="numpy>=2,<3", installed=False),
+    "cv2": DependencyStatus(module_name="cv2", pip_package="opencv-python>=4.10,<5", installed=False),
+    "easyocr": DependencyStatus(module_name="easyocr", pip_package="easyocr>=1.7,<2", installed=False),
+}
 
 
 
@@ -81,6 +113,60 @@ def _install_package(package_name: str) -> tuple[bool, str]:
     except Exception as e:
         print(f"[bootstrap] Failed to install {package_name}: {e}", flush=True)
         return False, str(e)
+
+
+
+def _requests_stack_needs_repair() -> bool:
+    try:
+        chardet_version = importlib.metadata.version("chardet")
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    try:
+        major = int(chardet_version.split(".", 1)[0])
+    except Exception:
+        return False
+    return major >= 6
+
+
+
+def _repair_requests_stack_if_needed() -> tuple[bool, str]:
+    if not _requests_stack_needs_repair():
+        return True, "requests stack already compatible"
+    return _install_package("chardet<6")
+
+
+
+def ensure_core_runtime_dependencies() -> dict:
+    print(f"[bootstrap] Verifying core runtime dependencies in {_python_label()} ...", flush=True)
+    dependencies = {
+        name: DependencyStatus(
+            module_name=status.module_name,
+            pip_package=status.pip_package,
+            installed=_module_installed(status.module_name),
+        )
+        for name, status in CORE_DEPENDENCIES.items()
+    }
+
+    for dependency in dependencies.values():
+        if dependency.installed:
+            continue
+        dependency.install_attempted = True
+        dependency.install_succeeded, dependency.error = _install_package(dependency.pip_package)
+        dependency.installed = dependency.install_succeeded or _module_installed(dependency.module_name)
+        if dependency.install_succeeded and not dependency.error:
+            dependency.error = "installed during startup"
+
+    repair_ok, repair_message = _repair_requests_stack_if_needed()
+    ready = all(dep.installed for dep in dependencies.values()) and repair_ok
+    print(f"[bootstrap] Core dependency status: ready={ready}", flush=True)
+    return {
+        "ready": ready,
+        "python_executable": _python_label(),
+        "python_version": _python_version_label(),
+        "requests_stack_repair_ok": repair_ok,
+        "requests_stack_repair_message": repair_message,
+        "dependencies": {name: dependency.to_dict() for name, dependency in dependencies.items()},
+    }
 
 
 
@@ -145,6 +231,8 @@ def ensure_runtime_dependencies() -> dict:
             if provider.install_succeeded and not provider.error:
                 provider.error = "installed during startup"
 
+    repair_ok, repair_message = _repair_requests_stack_if_needed()
+
     active = settings["ACTIVE_TOOL_PROVIDER"]
     if active not in providers:
         active = "open_interpreter"
@@ -164,9 +252,11 @@ def ensure_runtime_dependencies() -> dict:
         "active_provider": active,
         "fallback_applied": fallback_applied,
         "providers": {name: provider.to_dict() for name, provider in providers.items()},
-        "ready": selected.enabled and selected.installed,
+        "ready": selected.enabled and selected.installed and repair_ok,
         "python_executable": _python_label(),
         "python_version": _python_version_label(),
+        "requests_stack_repair_ok": repair_ok,
+        "requests_stack_repair_message": repair_message,
     }
     print(
         f"[bootstrap] Dependency status: requested={status['requested_provider']} "

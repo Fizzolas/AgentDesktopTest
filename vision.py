@@ -12,16 +12,42 @@ from __future__ import annotations
 import hashlib
 import time
 
-import numpy as np
 import cv2
 import easyocr
+import numpy as np
 
 from runtime_models import ScreenElement, ScreenState
 from screen_capture import capture_screen
 
-# EasyOCR reader is initialized once at module load to avoid repeated GPU overhead.
-# gpu=True leverages the RTX 4070 for OCR inference.
-_reader = easyocr.Reader(["en"], gpu=True, verbose=False)
+_reader = None
+
+
+
+def _easyocr_gpu_enabled() -> bool:
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+
+def _get_reader() -> easyocr.Reader:
+    global _reader
+    if _reader is not None:
+        return _reader
+
+    preferred_gpu = _easyocr_gpu_enabled()
+    try:
+        _reader = easyocr.Reader(["en"], gpu=preferred_gpu, verbose=False)
+        return _reader
+    except Exception:
+        if preferred_gpu:
+            _reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+            return _reader
+        raise
+
 
 
 def _bbox_from_points(bbox_points: list[list[float]]) -> list[int]:
@@ -34,10 +60,12 @@ def _bbox_from_points(bbox_points: list[list[float]]) -> list[int]:
     return [x, y, w, h]
 
 
+
 def _make_element_id(element_type: str, bbox: list[int], text: str = "") -> str:
     raw = f"{element_type}|{bbox[0]}|{bbox[1]}|{bbox[2]}|{bbox[3]}|{text.strip().lower()}"
     digest = hashlib.md5(raw.encode("utf-8")).hexdigest()[:12]
     return f"{element_type}_{digest}"
+
 
 
 def _build_description(text_joined: str, n_text: int, n_btn: int) -> str:
@@ -61,7 +89,8 @@ def analyze_frame_typed(img: np.ndarray, region: dict | None = None) -> ScreenSt
     elements: list[ScreenElement] = []
     all_text_parts: list[str] = []
 
-    ocr_results = _reader.readtext(img)
+    reader = _get_reader()
+    ocr_results = reader.readtext(img)
     for (bbox_points, text, confidence) in ocr_results:
         cleaned = text.strip()
         if not cleaned:
@@ -128,6 +157,7 @@ def analyze_frame_typed(img: np.ndarray, region: dict | None = None) -> ScreenSt
         "total_element_count": len(elements),
         "ocr_language": ["en"],
         "pipeline": ["easyocr", "opencv_contour"],
+        "gpu_requested": _easyocr_gpu_enabled(),
     }
 
     return ScreenState(
