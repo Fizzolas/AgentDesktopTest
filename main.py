@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import traceback
 import venv
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -16,6 +17,17 @@ REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
 
 def _print(message: str) -> None:
     print(message, flush=True)
+
+
+
+def _pause_before_exit(message: str = "") -> None:
+    if message:
+        _print(message)
+    if sys.stdin is not None and sys.stdin.isatty():
+        try:
+            input("[main] Press Enter to close this window...")
+        except Exception:
+            pass
 
 
 
@@ -48,7 +60,16 @@ def _create_venv_if_missing() -> None:
 
 def _run_command(command: list[str], label: str) -> None:
     _print(f"[main] {label} ...")
-    result = subprocess.run(command, cwd=str(PROJECT_ROOT))
+    result = subprocess.run(
+        command,
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout.strip():
+        _print(result.stdout.strip())
+    if result.stderr.strip():
+        _print(result.stderr.strip())
     if result.returncode != 0:
         raise RuntimeError(f"{label} failed with exit code {result.returncode}")
 
@@ -110,6 +131,8 @@ def _relaunch_in_project_venv() -> None:
     env = os.environ.copy()
     env["VIRTUAL_ENV"] = str(VENV_DIR)
     result = subprocess.run([str(venv_python), str(PROJECT_ROOT / "main.py"), *sys.argv[1:]], cwd=str(PROJECT_ROOT), env=env)
+    if result.returncode != 0:
+        _pause_before_exit(f"[main] Project virtual environment run failed with exit code {result.returncode}.")
     raise SystemExit(result.returncode)
 
 
@@ -152,4 +175,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        _print(f"[main] Startup failed: {e}")
+        _print(traceback.format_exc())
+        _pause_before_exit()
+        raise
