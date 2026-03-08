@@ -2,11 +2,13 @@
 
 ## CURRENT STATE
 - Branch: fix/runtime-baseline-01
-- Phase: startup failure visibility + provider package separation pass complete
+- Phase: Python 3.11 baseline + missing numpy + provider install guard pass complete
 - GUI: main.py launches the Tk desktop GUI by default; shell_main.py is fallback if GUI import/launch fails
+- Python baseline: main.py now targets Python 3.11 specifically, probes for it, rebuilds `.venv` with it when needed, and refuses to silently continue on an unsupported interpreter
 - Venv bootstrap: main.py auto-creates `.venv`, relaunches itself inside that environment, installs base requirements into it, and then runs provider bootstrap there
-- Base deps: requirements.txt now contains only core app dependencies; provider packages are installed separately by bootstrap logic instead of being forced through the base requirements pass
-- Failure visibility: startup now prints captured stdout/stderr for install steps and pauses on startup failure so the console does not disappear before the error can be read
+- Base deps: requirements.txt contains core app dependencies including numpy so vision.py can import on first startup
+- Failure visibility: startup prints captured stdout/stderr for install steps and pauses on startup failure so the console does not disappear before the error can be read
+- Provider bootstrap: open-interpreter auto-install now reports Python-version compatibility more clearly, and agents2-s3 auto-install now expects a real pip package name or git+ repository URL instead of the previous placeholder
 - Settings: persisted to agent_settings.json and applied immediately across runtime/model-facing modules
 - Startup: GUI boot initializes bootstrap checks, controller services, provider readiness, backend warmup, and monitor services automatically when enabled
 - Tool providers: both open_interpreter and agents2_s3 have persisted enable flags, auto-install flags, active-provider selection, and startup readiness checks
@@ -17,6 +19,12 @@
 - Goal: real application behavior instead of a loose collection of scripts
 
 ## CHANGELOG
+### [2026-03-08 12:04 EST] — Python 3.11 Baseline + Missing Numpy + Provider Install Guard Pass
+- Updated main.py to require Python 3.11, probe for a usable 3.11 interpreter, rebuild `.venv` with it when necessary, and relaunch into that runtime
+- Added numpy to requirements.txt so vision.py imports successfully during first-run startup
+- Updated bootstrap.py so open-interpreter auto-install explains Python 3.10-3.12 compatibility expectations instead of failing opaquely on unsupported runtimes
+- Updated config.py and bootstrap.py so agents2-s3 no longer pretends a placeholder `agents2-s3` package name is a valid install target; it now expects a real pip package or git+ repo URL
+
 ### [2026-03-08 11:59 EST] — Startup Failure Visibility + Provider Package Separation Pass
 - Updated main.py to capture and print stdout/stderr from package install steps instead of failing silently
 - Updated main.py to pause on startup failure so double-click launches do not instantly close before the error can be read

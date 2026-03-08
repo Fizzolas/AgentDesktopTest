@@ -52,6 +52,17 @@ def _python_label() -> str:
 
 
 
+def _python_version_label() -> str:
+    return f"{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}"
+
+
+
+def _open_interpreter_supported_python() -> bool:
+    major, minor = sys.version_info[:2]
+    return major == 3 and 10 <= minor <= 12
+
+
+
 def _install_package(package_name: str) -> tuple[bool, str]:
     print(f"[bootstrap] Installing {package_name} into {_python_label()} ...", flush=True)
     try:
@@ -97,6 +108,34 @@ def ensure_runtime_dependencies() -> dict:
     }
 
     print(f"[bootstrap] Python environment: {_python_label()}", flush=True)
+    print(f"[bootstrap] Python version: {_python_version_label()}", flush=True)
+
+    open_interpreter = providers["open_interpreter"]
+    if open_interpreter.enabled and open_interpreter.auto_install and not open_interpreter.installed and not _open_interpreter_supported_python():
+        open_interpreter.auto_install = False
+        open_interpreter.error = (
+            f"auto-install skipped: open-interpreter currently needs Python 3.10-3.12; "
+            f"current runtime is {_python_version_label()}"
+        )
+        print(f"[bootstrap] {open_interpreter.error}", flush=True)
+
+    agents_provider = providers["agents2_s3"]
+    if agents_provider.enabled and agents_provider.auto_install and not agents_provider.installed:
+        package_spec = (agents_provider.pip_package or "").strip()
+        if not package_spec:
+            agents_provider.auto_install = False
+            agents_provider.error = (
+                "auto-install skipped: AGENTS2_S3_PIP_PACKAGE is empty. "
+                "Set it to a real pip package name or a git+https:// repository URL."
+            )
+            print(f"[bootstrap] {agents_provider.error}", flush=True)
+        elif package_spec == "agents2-s3":
+            agents_provider.auto_install = False
+            agents_provider.error = (
+                "auto-install skipped: `agents2-s3` is not a valid install target here. "
+                "Use the real package name or the repo URL in git+https://... form."
+            )
+            print(f"[bootstrap] {agents_provider.error}", flush=True)
 
     for provider in providers.values():
         if provider.enabled and not provider.installed and provider.auto_install:
@@ -127,6 +166,7 @@ def ensure_runtime_dependencies() -> dict:
         "providers": {name: provider.to_dict() for name, provider in providers.items()},
         "ready": selected.enabled and selected.installed,
         "python_executable": _python_label(),
+        "python_version": _python_version_label(),
     }
     print(
         f"[bootstrap] Dependency status: requested={status['requested_provider']} "

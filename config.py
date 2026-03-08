@@ -25,7 +25,7 @@ DEFAULT_SETTINGS = {
     "ENABLE_OPEN_INTERPRETER_TOOLS": True,
     "ENABLE_AGENTS2_S3_TOOLS": True,
     "ACTIVE_TOOL_PROVIDER": "open_interpreter",
-    "AGENTS2_S3_PIP_PACKAGE": "agents2-s3",
+    "AGENTS2_S3_PIP_PACKAGE": "",
     "AGENTS2_S3_MODULE": "agents2_s3",
     "AUTO_TOOL_SELECTION": True,
     "ADAPTIVE_VISION": True,
@@ -75,7 +75,11 @@ def _normalize_settings(raw: dict | None) -> dict:
 
     provider = str(data["ACTIVE_TOOL_PROVIDER"] or DEFAULT_SETTINGS["ACTIVE_TOOL_PROVIDER"]).strip().lower()
     data["ACTIVE_TOOL_PROVIDER"] = provider if provider in {"open_interpreter", "agents2_s3"} else DEFAULT_SETTINGS["ACTIVE_TOOL_PROVIDER"]
-    data["AGENTS2_S3_PIP_PACKAGE"] = str(data["AGENTS2_S3_PIP_PACKAGE"] or DEFAULT_SETTINGS["AGENTS2_S3_PIP_PACKAGE"]).strip() or DEFAULT_SETTINGS["AGENTS2_S3_PIP_PACKAGE"]
+
+    agents_package = str(data["AGENTS2_S3_PIP_PACKAGE"] or DEFAULT_SETTINGS["AGENTS2_S3_PIP_PACKAGE"]).strip()
+    if agents_package == "agents2-s3":
+        agents_package = ""
+    data["AGENTS2_S3_PIP_PACKAGE"] = agents_package
     data["AGENTS2_S3_MODULE"] = str(data["AGENTS2_S3_MODULE"] or DEFAULT_SETTINGS["AGENTS2_S3_MODULE"]).strip() or DEFAULT_SETTINGS["AGENTS2_S3_MODULE"]
     return data
 
