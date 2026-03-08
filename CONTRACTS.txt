@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 11:06 EST
+# Last updated: 2026-03-08 11:09 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -120,18 +120,35 @@ agent_loop.py -> exports:
 # main.py
 # Role: Entry point and lightweight runtime shell for the desktop agent.
 # Imports from: config.py, agent_loop.py, model_adapter.py, sys (stdlib)
-# Status: Complete (Phase 5 baseline refactor: control shell added)
-# NOTE: This shell is transitional. A cleaner GUI should replace it after core
-#       runtime, queue, and tool orchestration migration stabilizes.
+# Status: Complete
 # =============================================================================
 
 main.py -> exports:
   print_runtime_snapshot(snapshot: dict) -> None
-    # Prints a summary of the active typed session state.
-
   main() -> None
-    # Starts the runtime shell, performs backend startup/warmup, and provides
-    # commands for goal storage, run, status, queue, notes, last, clear, and quit.
+
+# =============================================================================
+# monitor.py
+# Role: System health monitor. Tracks Ollama status, memory usage, GPU stats, and agent runtime state.
+# Imports from: config.py, agent_loop.py (lazy import), psutil, requests, time,
+#               threading, os, sys, json, pathlib, datetime
+# Status: Complete (Phase 6 baseline refactor: runtime-aware monitoring + UI payload)
+# NOTE: monitor.py must stay safe in standalone mode; agent_loop is imported lazily
+#       only when a runtime snapshot is requested.
+# =============================================================================
+
+monitor.py -> exports:
+  start_monitoring() -> None
+    # Starts the background monitoring thread.
+
+  stop_monitoring() -> None
+    # Stops the background monitoring thread.
+
+  get_current_status() -> dict
+    # Returns full system + runtime status, including health flags and summary text.
+
+  get_dashboard_status() -> dict
+    # Returns a compact UI-friendly status payload intended for future shell/GUI surfaces.
 
 # =============================================================================
 # FILE STATUS SUMMARY
@@ -144,3 +161,4 @@ main.py -> exports:
 # ollama_client.py   — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
 # agent_loop.py      — Complete (2026-03-08 10:50 EST) — typed session and internal task queue scaffold added
 # main.py            — Complete (2026-03-08 11:06 EST) — runtime shell added, GUI deferred to later phase
+# monitor.py         — Complete (2026-03-08 11:09 EST) — runtime-aware monitoring and dashboard payload added
