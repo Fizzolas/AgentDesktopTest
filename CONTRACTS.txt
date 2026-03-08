@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 10:07 EST
+# Last updated: 2026-03-08 10:32 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -35,123 +35,15 @@ config.py -> exports (variables):
 
 runtime_models.py -> exports:
   TaskStatus        : Enum[str]
-    # String enum for task lifecycle states:
-    # pending, running, waiting, blocked, done, failed, cancelled
-
   TaskPriority      : Enum[int]
-    # Int enum for task ordering:
-    # low=10, normal=50, high=90, critical=100
-
   TaskKind          : Enum[str]
-    # String enum describing queue task category:
-    # plan, observe, think, tool, verify, respond, complete
-
   ScreenElement     : dataclass
-    fields:
-      type         : str
-      bbox         : list[int]
-      text         : str
-      confidence   : float
-      element_id   : str
-      source       : str
-      metadata     : dict
-    methods:
-      from_legacy(data: dict) -> ScreenElement
-      to_legacy() -> dict
-
   ScreenState       : dataclass
-    fields:
-      description   : str
-      elements      : list[ScreenElement]
-      text          : str
-      timestamp     : float
-      region        : dict | None
-      active_window : str
-      metadata      : dict
-    methods:
-      from_legacy(data: dict) -> ScreenState
-      to_legacy() -> dict
-      text_preview(limit: int = 500) -> str
-
   ToolCall          : dataclass
-    fields:
-      name       : str
-      arguments  : dict
-      reason     : str
-      call_id    : str
-
   ToolResult        : dataclass
-    fields:
-      tool_name   : str
-      success     : bool
-      output      : str
-      error       : str
-      data        : dict
-      call_id     : str
-      timestamp   : float
-
   ModelReply        : dataclass
-    fields:
-      content      : str
-      model_name   : str
-      raw          : Any
-      tool_calls   : list[ToolCall]
-      stop_reason  : str
-      usage        : dict
-      metadata     : dict
-    properties:
-      has_tool_calls -> bool
-
   AgentTask         : dataclass
-    fields:
-      title          : str
-      kind           : TaskKind
-      instructions   : str
-      priority       : TaskPriority
-      status         : TaskStatus
-      task_id        : str
-      parent_id      : str | None
-      depends_on     : list[str]
-      assigned_model : str
-      assigned_tool  : str
-      attempts       : int
-      max_attempts   : int
-      created_at     : float
-      updated_at     : float
-      context        : dict
-      result         : ToolResult | None
-      notes          : list[str]
-    methods:
-      touch() -> None
-      add_note(note: str) -> None
-      mark_running() -> None
-      mark_done() -> None
-      mark_failed(note: str = "") -> None
-
   SessionState      : dataclass
-    fields:
-      goal             : str
-      session_id       : str
-      created_at       : float
-      active_model     : str
-      planner_model    : str
-      executor_model   : str
-      status           : str
-      last_screen_state: ScreenState | None
-      task_queue       : list[AgentTask]
-      completed_tasks  : list[AgentTask]
-      failed_tasks     : list[AgentTask]
-      tool_history     : list[ToolResult]
-      notes            : list[str]
-      metadata         : dict
-    methods:
-      enqueue(task: AgentTask) -> None
-      pop_next_task() -> AgentTask | None
-      record_completed(task: AgentTask) -> None
-      record_failed(task: AgentTask, note: str = "") -> None
-      add_tool_result(result: ToolResult) -> None
-      add_note(note: str) -> None
-
   create_task(
     title: str,
     instructions: str,
@@ -159,84 +51,91 @@ runtime_models.py -> exports:
     priority: TaskPriority = TaskPriority.NORMAL,
     **context,
   ) -> AgentTask
-    # Helper for creating new queue items with arbitrary context payload.
+
+# =============================================================================
+# model_adapter.py
+# Role: Backend adapter layer for model-agnostic runtime migration.
+# Imports from: config.py, ollama_client.py, runtime_models.py
+# Status: Complete (baseline backend boundary added before agent_loop migration)
+# NOTE: This file should become the default import boundary for future queue,
+#       planner, and executor code. Do not couple new orchestration code directly
+#       to ollama_client.py unless it is Ollama-specific on purpose.
+# =============================================================================
+
+model_adapter.py -> exports:
+  BaseModelAdapter   : ABC
+    methods:
+      is_available() -> bool
+      warmup(model_name: str | None = None) -> bool
+      generate_reply(
+        prompt: str,
+        system: str | None = None,
+        model_name: str | None = None,
+        timeout: int = 60,
+      ) -> ModelReply
+      generate_text(
+        prompt: str,
+        system: str | None = None,
+        model_name: str | None = None,
+        timeout: int = 60,
+      ) -> str
+
+  OllamaModelAdapter : BaseModelAdapter
+    # Concrete implementation backed by ollama_client.py.
+
+  build_default_adapter() -> BaseModelAdapter
+    # Returns OllamaModelAdapter(default_model=MODEL_NAME).
 
 # =============================================================================
 # screen_capture.py
 # Role: Raw screen grab utility. Base layer — no project imports.
 # Imports from: (none — uses mss, numpy only)
 # Status: Complete
-# FRAGILE: Returns BGR np.ndarray (3-channel uint8). Do NOT change to BGRA or PIL.Image.
-#          mss returns BGRA by default — the [:, :, :3] alpha strip is intentional.
-#          vision.py and OpenCV depend on this format.
 # =============================================================================
 
 screen_capture.py -> exports:
   capture_screen(region: dict | None = None) -> np.ndarray
-    # Captures screen or a region. Returns BGR numpy array (uint8, HxWxC).
-    # region format: {"top": int, "left": int, "width": int, "height": int}
-    # If region is None, captures full primary monitor (mss.monitors[1]).
-    # Uses context manager — mss handle is released after every call.
 
 # =============================================================================
 # vision.py
 # Role: Analyzes screen frames. Returns structured description for the agent.
 # Imports from: screen_capture.py, cv2, easyocr, numpy
 # Status: Complete
-# FRAGILE: _reader (easyocr.Reader) is initialized at module load with gpu=True.
-#          Do NOT move it inside analyze_frame() — re-init on every call = 2-5s penalty per tick.
-#          analyze_frame() input MUST be BGR np.ndarray. BGRA or PIL.Image will break the pipeline.
-#          Return dict keys are exactly: "description", "elements", "text".
-#          agent_loop.py keys into these by name — do NOT rename them.
 # NOTE: runtime_models.py exists as the future typed baseline, but vision.py still
 #       returns the legacy dict contract until all callers are migrated together.
 # =============================================================================
 
 vision.py -> exports:
   analyze_frame(img: np.ndarray) -> dict
-    # Analyzes a BGR screen frame using EasyOCR + OpenCV contour detection.
-    # Two-pass: OCR pass extracts text_block elements; contour pass finds button_candidates.
-    # Return format: {"description": str, "elements": list, "text": str}
-    # Each element: {"type": str, "bbox": [x, y, w, h], "text": str, "confidence": float}
-    # Element types: "text_block", "button_candidate"
-    # description is capped at 300-char text preview to avoid bloating agent prompt context.
-
   get_screen_state(region: dict | None = None) -> dict
-    # Convenience wrapper: calls capture_screen(region) then analyze_frame(img).
-    # No direct mss usage inside this function.
-    # Returns same format as analyze_frame():
-    # {"description": str, "elements": list, "text": str}
 
 # =============================================================================
 # ollama_client.py
 # Role: Interface to local Ollama model via HTTP API.
-# Imports from: config.py (MODEL_NAME, OLLAMA_URL, MAX_RETRIES, DEBUG), requests
+# Imports from: config.py (MODEL_NAME, OLLAMA_URL, MAX_RETRIES, DEBUG), requests, runtime_models.py
 # Status: Complete
-# FRAGILE: query_model() uses /api/chat with stream:False. Return type is str.
-#          Do NOT switch to /api/generate or enable streaming.
-#          load_model() uses /api/generate with empty prompt + keep_alive — correct warm-up pattern.
-#          check_ollama_running() guard in query_model() is what raises ConnectionError. Do not remove.
-# NOTE: runtime_models.py defines the future ModelReply baseline, but ollama_client.py
-#       still returns str until the backend-adapter migration lands.
+# FRAGILE: query_model() still returns str for legacy callers.
+# NOTE: query_model_reply() is the new typed baseline for future adapter/queue code.
 # =============================================================================
 
 ollama_client.py -> exports:
   check_ollama_running() -> bool
     # GET to OLLAMA_URL root with 3s timeout.
-    # Returns True if HTTP 200, False on any exception.
-    # Called by query_model() as entry guard.
 
   load_model(model_name: str) -> bool
-    # Warms up / preloads a model in Ollama via POST /api/generate.
-    # Payload: empty prompt + keep_alive: "5m". Timeout: 30s.
-    # Returns True if successful (HTTP 200), False if failed.
+    # Warm-up / preload using /api/generate with empty prompt + keep_alive.
 
   query_model(prompt: str, system: str | None = None) -> str
-    # Sends prompt to Ollama model via POST /api/chat with stream:False.
-    # Uses MODEL_NAME and OLLAMA_URL from config.py.
-    # Optional system param prepended as system message if provided.
-    # Retries up to MAX_RETRIES times on transient failure.
-    # Raises: ConnectionError if Ollama not running or all retries exhausted.
+    # Legacy plain-string wrapper. Delegates to query_model_reply().
+
+  query_model_reply(
+    prompt: str,
+    system: str | None = None,
+    model_name: str | None = None,
+    timeout: int = 60,
+  ) -> ModelReply
+    # Typed reply path for future queue-based runtime.
+    # Uses /api/chat with stream:False and includes raw response/usage metadata.
 
 # =============================================================================
 # agent_loop.py
@@ -248,35 +147,13 @@ ollama_client.py -> exports:
 #               time (stdlib)
 #               os (stdlib)
 # Status: Complete
-# FRAGILE: interpreter is configured at module load — do NOT re-configure in main.py or elsewhere.
-#          run() resets interpreter.messages = [] at start — each goal gets a clean session.
-#          GOAL_COMPLETE is the exact completion signal string — do not change it.
-#          _running is module-level state shared between run() and stop() — do not make it local.
-#          auto_run=True means OI executes code without confirmation. Intentional for autonomy.
-#          offline=True prevents cloud fallback. Do not remove.
-#          CUDA environment variables set at module load BEFORE interpreter init — do not reorder.
-#          CUDA_VISIBLE_DEVICES=0 hardcoded to GPU 0 (RTX 4070) — multi-GPU needs adjustment.
-#          num_gpu=999 is intentional — signals unlimited GPU layers with RAM offload.
 # NOTE: agent_loop.py still uses the legacy single-step loop. Queue migration has NOT started yet.
 # =============================================================================
 
 agent_loop.py -> exports:
   run(goal: str) -> None
-    # Main entry point for the agent loop.
-    # Calls check_ollama_running() at entry — raises ConnectionError if not live.
-    # Resets interpreter session (messages = [], system_message = _SYSTEM_PROMPT).
-    # Loop: get_screen_state() -> step() -> check GOAL_COMPLETE -> sleep(LOOP_DELAY).
-    # Exits on GOAL_COMPLETE in action string, KeyboardInterrupt, or stop() call.
-
   step(goal: str, screen_state: dict) -> str
-    # Runs a single agent tick.
-    # Builds prompt from goal + screen_state["description"] + screen_state["text"][:500].
-    # Routes through interpreter.chat(display=DEBUG, stream=False).
-    # Returns last assistant message content as action string.
-
   stop() -> None
-    # Sets _running = False — run() exits on next loop iteration.
-    # Clears interpreter.messages to free memory.
 
 # =============================================================================
 # main.py
@@ -285,65 +162,19 @@ agent_loop.py -> exports:
 #               agent_loop.py (run)
 #               ollama_client.py (check_ollama_running, load_model) [startup only — not runtime]
 # Status: Complete
-# NOTE: ollama_client is imported ONLY for the startup Ollama check and model warm-up.
-#       All runtime Ollama calls go through agent_loop.py.
-#       main.py does NOT import vision.py or configure the interpreter.
 # =============================================================================
 
 main.py -> exports:
   main() -> None
-    # 1. Prints startup banner (model, URL, debug state).
-    # 2. Calls check_ollama_running() — exits with sys.exit(1) if Ollama not live.
-    # 3. Calls load_model(MODEL_NAME) — warns but continues if warm-up fails.
-    # 4. Prompts user for goal string via input(). Exits cleanly on empty or Ctrl+C.
-    # 5. Calls agent_loop.run(goal).
-    # 6. Catches ConnectionError and unexpected exceptions — exits with message.
-    #    DEBUG=True re-raises unexpected exceptions for full traceback.
-
-# =============================================================================
-# OPEN INTERPRETER INTEGRATION NOTES
-# =============================================================================
-# OI version: 0.4.3
-# Run via Ollama: interpreter --model ollama/qwen2.5-coder:7b
-# Or in code (as implemented in agent_loop.py):
-#   from interpreter import interpreter
-#   interpreter.llm.model = "ollama/qwen2.5-coder:7b"
-#   interpreter.llm.api_base = "http://localhost:11434"
-#   interpreter.auto_run = True
-#   interpreter.offline = True
-#   interpreter.llm.num_gpu = 999  # Force GPU-only with RAM offload
-#   interpreter.chat("your goal here", display=False, stream=False)
-#
-# The interpreter object is instantiated ONCE in agent_loop.py and reused.
-# Do not instantiate it in main.py or any other file.
-# CUDA environment variables are set BEFORE interpreter initialization to block CPU compute.
-
-# =============================================================================
-# DEPENDENCY CHAIN SUMMARY
-# =============================================================================
-# main.py
-#   -> config.py                  [COMPLETE]
-#   -> agent_loop.py              [COMPLETE]
-#       -> config.py              [COMPLETE]
-#       -> vision.py              [COMPLETE]
-#           -> screen_capture.py  [COMPLETE]
-#       -> ollama_client.py       [COMPLETE]
-#           -> config.py          [COMPLETE]
-#       -> open-interpreter (external)
-#   -> ollama_client.py           [COMPLETE] (startup only)
-#
-# runtime_models.py currently sits outside the active dependency path and is the
-# new shared baseline for the queue refactor. Existing runtime files do not import
-# it yet to avoid breaking the working prototype in one step.
 
 # =============================================================================
 # FILE STATUS SUMMARY
 # =============================================================================
-# config.py          — Complete (2026-03-01 19:20 EST) — added GPU/RAM config
+# config.py          — Complete
 # runtime_models.py  — Complete (2026-03-08 10:07 EST) — shared typed runtime baseline added
-# screen_capture.py  — Complete (2026-03-01 18:32 EST)
-# ollama_client.py   — Complete (2026-03-01 18:39 EST)
-# vision.py          — Complete (2026-03-01 18:45 EST) — EasyOCR gpu=True
-# agent_loop.py      — Complete (2026-03-01 19:21 EST) — GPU-only + RAM offload enforced
-# main.py            — Complete (2026-03-01 18:59 EST)
-# ALL FILES COMPLETE
+# model_adapter.py   — Complete (2026-03-08 10:32 EST) — backend adapter baseline added
+# screen_capture.py  — Complete
+# ollama_client.py   — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
+# vision.py          — Complete
+# agent_loop.py      — Complete — legacy runtime still active
+# main.py            — Complete
