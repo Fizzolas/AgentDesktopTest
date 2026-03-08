@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 11:00 EST
+# Last updated: 2026-03-08 11:06 EST
 # Rules:
 #   - Never call a function with different args than defined here
 #   - Never change a return type without updating this file AND all callers
@@ -75,26 +75,14 @@ screen_capture.py -> exports:
 # vision.py
 # Role: Analyzes screen frames. Returns structured description for the agent.
 # Imports from: screen_capture.py, runtime_models.py, cv2, easyocr, numpy, hashlib, time
-# Status: Complete (Phase 4 baseline refactor: typed screen-state path added)
-# FRAGILE: _reader (easyocr.Reader) is initialized at module load with gpu=True.
-#          analyze_frame_typed() input MUST be BGR np.ndarray.
-#          analyze_frame() and get_screen_state() remain legacy dict wrappers.
-# NOTE: New runtime code should prefer analyze_frame_typed() and get_screen_state_typed().
+# Status: Complete
 # =============================================================================
 
 vision.py -> exports:
   analyze_frame(img: np.ndarray) -> dict
-    # Legacy compatibility wrapper returning {"description", "elements", "text"}.
-
   analyze_frame_typed(img: np.ndarray, region: dict | None = None) -> ScreenState
-    # New typed analysis path returning ScreenState with ScreenElement entries,
-    # stable element_id values, frame metadata, and capture timestamp.
-
   get_screen_state(region: dict | None = None) -> dict
-    # Legacy compatibility wrapper returning dict state.
-
   get_screen_state_typed(region: dict | None = None) -> ScreenState
-    # New typed capture + analysis wrapper for queue-based runtime code.
 
 # =============================================================================
 # ollama_client.py
@@ -119,9 +107,7 @@ ollama_client.py -> exports:
 # Role: Core autonomous goal loop. Orchestrates all components.
 # Imports from: config.py, model_adapter.py, runtime_models.py, vision.py,
 #               open-interpreter, time (stdlib), os (stdlib), typing (stdlib)
-# Status: Complete (Phase 3 baseline refactor: typed session state + internal queue)
-# NOTE: The active runtime still executes through Open Interpreter, but now stores
-#       typed SessionState and AgentTask data under the loop.
+# Status: Complete
 # =============================================================================
 
 agent_loop.py -> exports:
@@ -132,13 +118,20 @@ agent_loop.py -> exports:
 
 # =============================================================================
 # main.py
-# Role: Entry point. Wires config + agent loop together. Minimal logic.
-# Imports from: config.py, agent_loop.py, ollama_client.py
-# Status: Complete
+# Role: Entry point and lightweight runtime shell for the desktop agent.
+# Imports from: config.py, agent_loop.py, model_adapter.py, sys (stdlib)
+# Status: Complete (Phase 5 baseline refactor: control shell added)
+# NOTE: This shell is transitional. A cleaner GUI should replace it after core
+#       runtime, queue, and tool orchestration migration stabilizes.
 # =============================================================================
 
 main.py -> exports:
+  print_runtime_snapshot(snapshot: dict) -> None
+    # Prints a summary of the active typed session state.
+
   main() -> None
+    # Starts the runtime shell, performs backend startup/warmup, and provides
+    # commands for goal storage, run, status, queue, notes, last, clear, and quit.
 
 # =============================================================================
 # FILE STATUS SUMMARY
@@ -150,4 +143,4 @@ main.py -> exports:
 # vision.py          — Complete (2026-03-08 11:00 EST) — typed ScreenState path added, legacy dict path preserved
 # ollama_client.py   — Complete (2026-03-08 10:32 EST) — typed reply path added, legacy text path preserved
 # agent_loop.py      — Complete (2026-03-08 10:50 EST) — typed session and internal task queue scaffold added
-# main.py            — Complete
+# main.py            — Complete (2026-03-08 11:06 EST) — runtime shell added, GUI deferred to later phase

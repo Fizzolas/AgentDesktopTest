@@ -18,7 +18,8 @@
 - **GitHub:** https://github.com/Fizzolas/AgentDesktopTest (public)
 - **Branch strategy:** main = stable | fix/* = per-session fix branches
 - **Current refactor branch:** fix/runtime-baseline-01
-- **Baseline refactor phase:** Phase 4 complete — vision now has typed ScreenState output with stable element IDs and frame metadata
+- **Baseline refactor phase:** Phase 5 complete — main.py now exposes a lightweight runtime shell with queue/session inspection
+- **GUI roadmap note:** Defer GUI until after core file-session refactors; replace shell with a much cleaner interactive GUI at the end
 - **config.py:** Complete — 8 constants (added BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU) (2026-03-01 19:20 EST)
 - **runtime_models.py:** Complete — shared dataclasses/enums/helpers for queue-based runtime (2026-03-08 10:07 EST)
 - **model_adapter.py:** Complete — backend adapter boundary for model-agnostic runtime migration (2026-03-08 10:32 EST)
@@ -26,10 +27,10 @@
 - **ollama_client.py:** Complete — query_model(), load_model(), check_ollama_running() implemented; typed query_model_reply() added (2026-03-08 10:32 EST)
 - **vision.py:** Complete — legacy dict path preserved; new typed analyze_frame_typed() and get_screen_state_typed() return ScreenState with ScreenElement metadata (2026-03-08 11:00 EST)
 - **agent_loop.py:** Complete — run(), step(), stop() still active; now also manages typed session state, queue seeding, and live session snapshots (2026-03-08 10:50 EST)
-- **main.py:** Complete — main() implemented (2026-03-01 18:59 EST)
+- **main.py:** Complete — upgraded from one-shot prompt launcher to a lightweight runtime shell with commands for goal/run/status/queue/notes/last/clear/quit (2026-03-08 11:06 EST)
 - **monitor.py:** Complete — system health monitoring with rolling log (2026-03-01 19:29 EST)
 - **Remaining empty shells:** NONE — all files complete
-- **Next migration target:** main.py and/or a new runtime shell should expose queue inspection, session snapshot viewing, and future live control hooks
+- **Next migration target:** monitor.py and runtime control surfaces should be connected into adaptive policy/inspection next; polished GUI comes last
 
 ---
 
@@ -64,7 +65,7 @@
 
 | File | Purpose | Status |
 |---|---|---|
-| main.py | Entry point. Initializes config, starts agent via Open Interpreter | **Complete** |
+| main.py | Runtime shell entry point with startup, command handling, and session inspection | **Complete** |
 | agent_loop.py | Core goal loop with typed session state, internal queue scaffolding, and Open Interpreter execution | **Complete** |
 | runtime_models.py | Shared typed runtime layer for queue tasks, model replies, tool results, and session state | **Complete** |
 | model_adapter.py | Stable backend boundary for future multi-runtime model support | **Complete** |
@@ -90,8 +91,9 @@ model_adapter.py
 
 main.py
   imports: config.py (DEBUG, MODEL_NAME, OLLAMA_URL)
-           agent_loop.py (run)
-           ollama_client.py (check_ollama_running, load_model) [startup only]
+           agent_loop.py
+           model_adapter.py (build_default_adapter)
+           sys (stdlib)
 
 agent_loop.py
   imports: config.py (MODEL_NAME, OLLAMA_URL, LOOP_DELAY, DEBUG, BLOCK_CPU_COMPUTE, OLLAMA_NUM_GPU)
@@ -139,6 +141,8 @@ config.py
 - agent_loop interpreter is configured at module load. Do NOT re-configure in main.py or any other file until bootstrap extraction is implemented.
 - GOAL_COMPLETE is still the completion signal string. The internal task queue now exists, but explicit task-state completion has not fully replaced this string yet.
 - agent_loop._active_session stores the live typed SessionState; get_session_snapshot() exposes a serializable debug view.
+- main.py is now a transitional runtime shell, not the final UX. Do not over-invest in CLI polish beyond what helps core debugging.
+- Final GUI target should be significantly cleaner and more interactive than the transitional CLI shell.
 - monitor.py runs in a daemon thread. It does NOT block main execution. Can be run standalone: python monitor.py
 - monitor.log auto-rotates at 10MB. Old log becomes monitor.log.old (single backup only).
 - Do not add pip packages without logging them below in the active Dependencies section.
@@ -180,6 +184,14 @@ config.py
 ---
 
 ## CHANGELOG
+
+### [2026-03-08 11:06 EST] — Baseline Refactor Phase 5: Runtime Shell Added
+- Refactored main.py from a one-shot goal prompt launcher into a lightweight runtime shell
+- Added backend startup verification and warm-up through model_adapter.build_default_adapter()
+- Added shell commands: help, goal, run, status, queue, notes, last, clear, quit
+- Added print_runtime_snapshot() helper to expose the new typed session state from agent_loop.get_session_snapshot()
+- Explicitly documented that this shell is temporary and the cleaner GUI comes later after runtime stabilization
+- Files affected: main.py, PROJECT_CONTEXT.md, CONTRACTS.txt
 
 ### [2026-03-08 11:00 EST] — Baseline Refactor Phase 4: Typed Vision State Added
 - Refactored vision.py to add analyze_frame_typed() and get_screen_state_typed()
