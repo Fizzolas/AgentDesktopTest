@@ -27,6 +27,8 @@ DEFAULT_SETTINGS = {
     "ACTIVE_TOOL_PROVIDER": "open_interpreter",
     "AGENTS2_S3_PIP_PACKAGE": "agents2-s3",
     "AGENTS2_S3_MODULE": "agents2_s3",
+    "AUTO_TOOL_SELECTION": True,
+    "ADAPTIVE_VISION": True,
 }
 
 
@@ -68,6 +70,8 @@ def _normalize_settings(raw: dict | None) -> dict:
     data["AUTO_INSTALL_AGENTS2_S3"] = bool(data["AUTO_INSTALL_AGENTS2_S3"])
     data["ENABLE_OPEN_INTERPRETER_TOOLS"] = bool(data["ENABLE_OPEN_INTERPRETER_TOOLS"])
     data["ENABLE_AGENTS2_S3_TOOLS"] = bool(data["ENABLE_AGENTS2_S3_TOOLS"])
+    data["AUTO_TOOL_SELECTION"] = bool(data["AUTO_TOOL_SELECTION"])
+    data["ADAPTIVE_VISION"] = bool(data["ADAPTIVE_VISION"])
 
     provider = str(data["ACTIVE_TOOL_PROVIDER"] or DEFAULT_SETTINGS["ACTIVE_TOOL_PROVIDER"]).strip().lower()
     data["ACTIVE_TOOL_PROVIDER"] = provider if provider in {"open_interpreter", "agents2_s3"} else DEFAULT_SETTINGS["ACTIVE_TOOL_PROVIDER"]
@@ -117,7 +121,7 @@ def _set_module_globals(settings: dict) -> None:
     global SCREEN_REGION, LOOP_DELAY, MAX_RETRIES, DEBUG, GUI_REFRESH_MS, START_MONITOR_ON_GUI
     global AUTO_INSTALL_DEPENDENCIES, AUTO_INSTALL_OPEN_INTERPRETER, AUTO_INSTALL_AGENTS2_S3
     global ENABLE_OPEN_INTERPRETER_TOOLS, ENABLE_AGENTS2_S3_TOOLS, ACTIVE_TOOL_PROVIDER
-    global AGENTS2_S3_PIP_PACKAGE, AGENTS2_S3_MODULE
+    global AGENTS2_S3_PIP_PACKAGE, AGENTS2_S3_MODULE, AUTO_TOOL_SELECTION, ADAPTIVE_VISION
 
     MODEL_NAME = settings["MODEL_NAME"]
     OLLAMA_URL = settings["OLLAMA_URL"]
@@ -137,6 +141,8 @@ def _set_module_globals(settings: dict) -> None:
     ACTIVE_TOOL_PROVIDER = settings["ACTIVE_TOOL_PROVIDER"]
     AGENTS2_S3_PIP_PACKAGE = settings["AGENTS2_S3_PIP_PACKAGE"]
     AGENTS2_S3_MODULE = settings["AGENTS2_S3_MODULE"]
+    AUTO_TOOL_SELECTION = settings["AUTO_TOOL_SELECTION"]
+    ADAPTIVE_VISION = settings["ADAPTIVE_VISION"]
 
 
 
@@ -170,6 +176,8 @@ def _sync_loaded_modules() -> None:
         module.ACTIVE_TOOL_PROVIDER = ACTIVE_TOOL_PROVIDER
         module.ENABLE_OPEN_INTERPRETER_TOOLS = ENABLE_OPEN_INTERPRETER_TOOLS
         module.ENABLE_AGENTS2_S3_TOOLS = ENABLE_AGENTS2_S3_TOOLS
+        module.AUTO_TOOL_SELECTION = AUTO_TOOL_SELECTION
+        module.ADAPTIVE_VISION = ADAPTIVE_VISION
 
         if hasattr(module, "interpreter"):
             try:
@@ -192,6 +200,8 @@ def _sync_loaded_modules() -> None:
             session.planner_model = MODEL_NAME
             session.executor_model = MODEL_NAME
             session.metadata["tool_provider"] = ACTIVE_TOOL_PROVIDER
+            session.metadata["auto_tool_selection"] = AUTO_TOOL_SELECTION
+            session.metadata["adaptive_vision"] = ADAPTIVE_VISION
 
 
 
@@ -215,6 +225,8 @@ def get_runtime_settings() -> dict:
         "ACTIVE_TOOL_PROVIDER": ACTIVE_TOOL_PROVIDER,
         "AGENTS2_S3_PIP_PACKAGE": AGENTS2_S3_PIP_PACKAGE,
         "AGENTS2_S3_MODULE": AGENTS2_S3_MODULE,
+        "AUTO_TOOL_SELECTION": AUTO_TOOL_SELECTION,
+        "ADAPTIVE_VISION": ADAPTIVE_VISION,
     }
 
 

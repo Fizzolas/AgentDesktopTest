@@ -1,5 +1,5 @@
 # CONTRACTS.txt — AgentDesktopTest
-# Last updated: 2026-03-08 11:35 EST
+# Last updated: 2026-03-08 11:40 EST
 
 config.py -> exports (variables/functions):
   MODEL_NAME: str
@@ -20,6 +20,8 @@ config.py -> exports (variables/functions):
   ACTIVE_TOOL_PROVIDER: str
   AGENTS2_S3_PIP_PACKAGE: str
   AGENTS2_S3_MODULE: str
+  AUTO_TOOL_SELECTION: bool
+  ADAPTIVE_VISION: bool
   load_runtime_settings() -> dict
   save_runtime_settings(settings: dict) -> dict
   get_runtime_settings() -> dict
@@ -67,7 +69,7 @@ gui_app.py -> exports:
 
 agent_loop.py -> exports:
   run(goal: str) -> None
-  step(goal: str, screen_state: dict | ScreenState) -> str
+  step(goal: str, screen_state: dict | ScreenState | None = None) -> str
   stop() -> None
   get_session_snapshot() -> dict
 

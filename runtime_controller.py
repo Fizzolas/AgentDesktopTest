@@ -28,6 +28,8 @@ class RuntimeController:
             "debug": settings["DEBUG"],
             "ui_mode": "gui_primary",
             "tool_provider": settings["ACTIVE_TOOL_PROVIDER"],
+            "auto_tool_selection": settings["AUTO_TOOL_SELECTION"],
+            "adaptive_vision": settings["ADAPTIVE_VISION"],
             "gui_note": "GUI is the primary app surface; shell is fallback only.",
         }
 
@@ -51,6 +53,8 @@ class RuntimeController:
             "warmup_ok": warmup_ok,
             "dependency_status": self.dependency_status,
             "tool_provider": self.dependency_status.get("active_provider", settings["ACTIVE_TOOL_PROVIDER"]),
+            "auto_tool_selection": settings["AUTO_TOOL_SELECTION"],
+            "adaptive_vision": settings["ADAPTIVE_VISION"],
         }
 
     def apply_all_startup_services(self) -> dict:
@@ -123,6 +127,8 @@ class RuntimeController:
         return {
             "last_action": snapshot.get("last_action", ""),
             "last_screen_state": snapshot.get("last_screen_state") or {},
+            "last_route": snapshot.get("last_route", ""),
+            "last_vision_reason": snapshot.get("last_vision_reason", ""),
         }
 
     def start_monitoring(self) -> None:
