@@ -30,6 +30,7 @@ def check_ollama_running() -> bool:
         return False
 
 
+
 def load_model(model_name: str) -> bool:
     """
     Warms up / preloads a model in Ollama.
@@ -41,6 +42,7 @@ def load_model(model_name: str) -> bool:
             "model": model_name,
             "prompt": "",
             "keep_alive": "5m",
+            "stream": False,
         }
         response = requests.post(
             f"{OLLAMA_URL}/api/generate",
@@ -60,12 +62,14 @@ def load_model(model_name: str) -> bool:
         return False
 
 
+
 def _build_messages(prompt: str, system: str | None = None) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
     return messages
+
 
 
 def _parse_chat_response(data: dict[str, Any], requested_model: str) -> ModelReply:
@@ -101,6 +105,7 @@ def _parse_chat_response(data: dict[str, Any], requested_model: str) -> ModelRep
     )
 
 
+
 def query_model_reply(
     prompt: str,
     system: str | None = None,
@@ -115,7 +120,10 @@ def query_model_reply(
     if not check_ollama_running():
         raise ConnectionError(f"Ollama is not reachable at {OLLAMA_URL}")
 
-    requested_model = model_name or MODEL_NAME
+    requested_model = (model_name or MODEL_NAME).strip()
+    if not requested_model:
+        raise ValueError("A model name is required to query Ollama.")
+
     payload = {
         "model": requested_model,
         "messages": _build_messages(prompt, system),
@@ -151,11 +159,22 @@ def query_model_reply(
     )
 
 
-def query_model(prompt: str, system: str | None = None) -> str:
+
+def query_model(
+    prompt: str,
+    system: str | None = None,
+    model_name: str | None = None,
+    timeout: int = 60,
+) -> str:
     """
     Sends a prompt to the Ollama model via /api/chat.
     Returns the model's response as a plain string.
     Raises ConnectionError if Ollama is not running or all retries fail.
     """
-    reply = query_model_reply(prompt=prompt, system=system, model_name=MODEL_NAME, timeout=60)
+    reply = query_model_reply(
+        prompt=prompt,
+        system=system,
+        model_name=model_name or MODEL_NAME,
+        timeout=timeout,
+    )
     return reply.content

@@ -10,7 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from config import MODEL_NAME
-from ollama_client import check_ollama_running, load_model, query_model, query_model_reply
+from ollama_client import check_ollama_running, load_model, query_model_reply
 from runtime_models import ModelReply
 
 
@@ -54,13 +54,12 @@ class BaseModelAdapter(ABC):
         model_name: str | None = None,
         timeout: int = 60,
     ) -> str:
-        reply = self.generate_reply(
+        return self.generate_reply(
             prompt=prompt,
             system=system,
             model_name=model_name,
             timeout=timeout,
-        )
-        return reply.content
+        ).content
 
 
 class OllamaModelAdapter(BaseModelAdapter):
@@ -91,20 +90,6 @@ class OllamaModelAdapter(BaseModelAdapter):
         reply.metadata["adapter"] = self.backend_name
         return reply
 
-    def generate_text(
-        self,
-        prompt: str,
-        system: str | None = None,
-        model_name: str | None = None,
-        timeout: int = 60,
-    ) -> str:
-        selected_model = model_name or self.default_model
-        return query_model(prompt=prompt, system=system) if selected_model == MODEL_NAME else self.generate_reply(
-            prompt=prompt,
-            system=system,
-            model_name=selected_model,
-            timeout=timeout,
-        ).content
 
 
 def build_default_adapter() -> BaseModelAdapter:
